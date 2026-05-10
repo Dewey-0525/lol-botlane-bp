@@ -1,0 +1,7 @@
+.mt {
+  margin-top: 14rpx;
+}
+
+.row {
+  justify-content: space-between;
+}

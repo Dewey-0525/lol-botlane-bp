@@ -1,0 +1,18 @@
+<view class="page">
+  <view class="title">梯队榜</view>
+  <view class="panel">
+    <picker mode="selector" range="{{lanes}}" range-key="label" bindchange="onLaneChange">
+      <view class="input">位置：{{laneLabel}}</view>
+    </picker>
+  </view>
+  <block wx:for="{{results}}" wx:key="id">
+    <view class="card row">
+      <image class="avatar" src="{{apiBase}}{{item.avatar}}" mode="aspectFill" />
+      <view class="grow">
+        <view class="name">{{index + 1}}. {{item.cn_name}}</view>
+        <view class="sub">{{item.name}}</view>
+      </view>
+      <view class="badge">{{item.tier}}</view>
+    </view>
+  </block>
+</view>

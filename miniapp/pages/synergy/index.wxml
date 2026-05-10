@@ -1,0 +1,17 @@
+<view class="page">
+  <view class="title">协同查询</view>
+  <view class="panel">
+    <input class="input" placeholder="输入英雄名，如金克丝/霞/ez" value="{{query}}" bindinput="onInput" />
+    <view class="button mt" bindtap="submit">查询协同</view>
+  </view>
+  <block wx:for="{{results}}" wx:key="name">
+    <view class="card row">
+      <image class="avatar" src="{{apiBase}}{{item.avatar}}" mode="aspectFill" />
+      <view class="grow">
+        <view class="name">{{index + 1}}. {{item.display_name}}</view>
+        <view class="sub">{{item.english_name}} · 胜率 {{item.win_rate}}%</view>
+      </view>
+      <view class="badge">{{item.tier}}</view>
+    </view>
+  </block>
+</view>

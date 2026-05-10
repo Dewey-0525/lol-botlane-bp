@@ -1,0 +1,18 @@
+{
+  "description": "LoL 下路 BP 助手小程序",
+  "packOptions": {
+    "ignore": []
+  },
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true
+  },
+  "compileType": "miniprogram",
+  "libVersion": "latest",
+  "appid": "touristappid",
+  "projectname": "lol-botlane-bp",
+  "condition": {}
+}

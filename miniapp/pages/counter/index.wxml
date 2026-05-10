@@ -1,0 +1,33 @@
+<view class="page">
+  <view class="title">克制查询</view>
+  <view class="panel">
+    <input class="input" placeholder="输入敌方英雄名" value="{{query}}" bindinput="onInput" />
+    <view class="button mt" bindtap="submit">查询反制</view>
+  </view>
+  <view class="panel">
+    <view class="name">推荐 ADC</view>
+    <block wx:for="{{adc}}" wx:key="name">
+      <view class="card row">
+        <image class="avatar" src="{{apiBase}}{{item.avatar}}" mode="aspectFill" />
+        <view class="grow">
+          <view class="name">{{index + 1}}. {{item.display_name}}</view>
+          <view class="sub">{{item.english_name}} · 我方胜率 {{item.win_rate}}%</view>
+        </view>
+        <view class="badge">{{item.tier}}</view>
+      </view>
+    </block>
+  </view>
+  <view class="panel">
+    <view class="name">推荐辅助</view>
+    <block wx:for="{{support}}" wx:key="name">
+      <view class="card row">
+        <image class="avatar" src="{{apiBase}}{{item.avatar}}" mode="aspectFill" />
+        <view class="grow">
+          <view class="name">{{index + 1}}. {{item.display_name}}</view>
+          <view class="sub">{{item.english_name}} · 我方胜率 {{item.win_rate}}%</view>
+        </view>
+        <view class="badge">{{item.tier}}</view>
+      </view>
+    </block>
+  </view>
+</view>

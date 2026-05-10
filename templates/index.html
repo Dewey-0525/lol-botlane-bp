@@ -1,0 +1,897 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LoL 下路 BP 助手</title>
+  <style>
+    :root {
+      --bg: #f4f6f9;
+      --panel: #ffffff;
+      --line: #d9dee8;
+      --text: #172033;
+      --muted: #657083;
+      --accent: #1f6feb;
+      --accent-soft: #eaf2ff;
+      --good: #177245;
+      --mid: #8a5a00;
+      --low: #9b1c1c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    header {
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+      padding: 14px 20px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.2;
+    }
+    main {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 18px;
+    }
+    .topbar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .status {
+      color: var(--muted);
+      font-size: 13px;
+      min-height: 20px;
+    }
+    .role-switch {
+      display: flex;
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+    .tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    .tab {
+      border: 0;
+      border-bottom: 3px solid transparent;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 800;
+      min-height: 42px;
+      padding: 0 14px;
+    }
+    .tab.active {
+      border-bottom-color: var(--accent);
+      color: var(--accent);
+    }
+    .view { display: none; }
+    .view.active { display: block; }
+    .role-switch button {
+      min-width: 94px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      font-weight: 700;
+      cursor: pointer;
+      min-height: 34px;
+    }
+    .role-switch button.active {
+      background: var(--accent);
+      color: white;
+    }
+    .bp-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .slot {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    label {
+      display: grid;
+      gap: 7px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      position: relative;
+    }
+    input {
+      width: 100%;
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      color: var(--text);
+      background: #fbfcfe;
+      font-size: 14px;
+      padding: 0 10px;
+    }
+    .suggestions {
+      display: none;
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      z-index: 30;
+      max-height: 260px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 12px 28px rgba(23, 32, 51, 0.16);
+    }
+    .suggestions.active { display: block; }
+    .suggestion {
+      display: flex;
+      gap: 9px;
+      align-items: center;
+      width: 100%;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      padding: 8px 10px;
+      text-align: left;
+    }
+    .suggestion:last-child { border-bottom: 0; }
+    .suggestion:hover { background: var(--accent-soft); }
+    .suggestion img {
+      width: 28px;
+      height: 28px;
+      border-radius: 5px;
+      background: #dbe1ea;
+      object-fit: cover;
+    }
+    .suggestion strong {
+      display: block;
+      font-size: 14px;
+    }
+    .suggestion span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .primary, .secondary, select {
+      min-height: 38px;
+      border-radius: 6px;
+      font-size: 14px;
+      padding: 0 12px;
+    }
+    .primary {
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: white;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .secondary, select {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--text);
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .query-grid {
+      display: grid;
+      grid-template-columns: minmax(240px, 360px) auto auto;
+      gap: 10px;
+      align-items: end;
+      margin-bottom: 14px;
+    }
+    .split {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .section-title {
+      margin: 4px 0 10px;
+      font-size: 16px;
+    }
+    .metric {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .metric strong {
+      display: block;
+      margin-top: 4px;
+      font-size: 18px;
+    }
+    .metric.wide {
+      grid-column: span 2;
+    }
+    .metric p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      text-align: left;
+      white-space: nowrap;
+      font-size: 14px;
+    }
+    th {
+      background: #eef2f7;
+      color: #344054;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    tr:last-child td { border-bottom: 0; }
+    .champ {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-weight: 800;
+    }
+    .champ img {
+      width: 32px;
+      height: 32px;
+      border-radius: 5px;
+      background: #dbe1ea;
+      object-fit: cover;
+    }
+    .champ small {
+      display: block;
+      margin-top: 1px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 0 8px;
+      border-radius: 999px;
+      font-weight: 800;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 12px;
+    }
+    .confidence-high { color: var(--good); }
+    .confidence-medium { color: var(--mid); }
+    .confidence-low { color: var(--low); }
+    .confidence-very_low { color: var(--muted); }
+    .help-tip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      margin-left: 4px;
+      border: 1px solid #98a2b3;
+      border-radius: 50%;
+      color: var(--muted);
+      cursor: help;
+      font-size: 11px;
+      font-weight: 900;
+      line-height: 1;
+      position: relative;
+      vertical-align: middle;
+    }
+    .help-tip::after {
+      content: attr(data-tip);
+      display: none;
+      position: absolute;
+      right: 0;
+      top: calc(100% + 8px);
+      z-index: 50;
+      width: 280px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 12px 28px rgba(23, 32, 51, 0.18);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1.55;
+      text-align: left;
+      white-space: normal;
+    }
+    .help-tip:hover::after,
+    .help-tip:focus::after {
+      display: block;
+    }
+    .missing {
+      color: var(--muted);
+      max-width: 260px;
+      white-space: normal;
+    }
+    .page-note {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+      text-align: right;
+    }
+    .page-note a {
+      color: var(--muted);
+      text-decoration: none;
+    }
+    .page-note a:hover {
+      color: var(--accent);
+      text-decoration: underline;
+    }
+    @media (max-width: 920px) {
+      .topbar { align-items: flex-start; flex-direction: column; }
+      .bp-grid, .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .query-grid, .split { grid-template-columns: 1fr; }
+      table { display: block; overflow-x: auto; }
+    }
+    @media (max-width: 560px) {
+      .bp-grid, .summary { grid-template-columns: 1fr; }
+      .actions { align-items: stretch; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>LoL 下路 BP 助手</h1>
+  </header>
+
+  <main>
+    <nav class="tabs">
+      <button class="tab active" data-view="bp_view" type="button">BP 推荐</button>
+      <button class="tab" data-view="synergy_view" type="button">协同查询</button>
+      <button class="tab" data-view="counter_view" type="button">克制查询</button>
+      <button class="tab" data-view="tier_view" type="button">梯队榜</button>
+    </nav>
+
+    <section id="bp_view" class="view active">
+    <section class="topbar">
+      <div class="role-switch">
+        <button class="active" data-role="support" type="button">推荐辅助</button>
+        <button data-role="adc" type="button">推荐 ADC</button>
+      </div>
+      <div class="status" id="status">正在加载英雄列表...</div>
+    </section>
+
+    <section class="bp-grid">
+      <div class="slot">
+        <label>己方 ADC
+          <input id="ally_ad" autocomplete="off" placeholder="未知">
+          <div class="suggestions" id="ally_ad_suggestions"></div>
+        </label>
+      </div>
+      <div class="slot">
+        <label>己方辅助
+          <input id="ally_sup" autocomplete="off" placeholder="未知">
+          <div class="suggestions" id="ally_sup_suggestions"></div>
+        </label>
+      </div>
+      <div class="slot">
+        <label>敌方 ADC
+          <input id="enemy_ad" autocomplete="off" placeholder="未知">
+          <div class="suggestions" id="enemy_ad_suggestions"></div>
+        </label>
+      </div>
+      <div class="slot">
+        <label>敌方辅助
+          <input id="enemy_sup" autocomplete="off" placeholder="未知">
+          <div class="suggestions" id="enemy_sup_suggestions"></div>
+        </label>
+      </div>
+    </section>
+
+    <datalist id="bottom_list"></datalist>
+    <datalist id="support_list"></datalist>
+
+    <section class="actions">
+      <button class="primary" id="recommend" type="button">重新推荐</button>
+      <button class="secondary" id="clear" type="button">清空</button>
+      <select id="confidence_filter" aria-label="可信度筛选">
+        <option value="all">全部可信度</option>
+        <option value="high">只看高可信</option>
+        <option value="medium">中及以上</option>
+      </select>
+      <select id="sort_by" aria-label="排序方式">
+        <option value="final_rating">按推荐结果</option>
+        <option value="display_winrate">按推荐指数</option>
+        <option value="base_rating">按基础表现</option>
+        <option value="counter_bonus">按对位</option>
+        <option value="synergy_bonus">按配合</option>
+      </select>
+    </section>
+
+    <section class="summary">
+      <div class="metric wide"><span>BP 状态</span><strong id="state">-</strong><p id="state_desc">-</p></div>
+      <div class="metric"><span>返回推荐</span><strong id="total">-</strong></div>
+      <div class="metric"><span>高可信</span><strong id="high_count">-</strong></div>
+      <div class="metric"><span>数据更新时间</span><strong id="update_time">-</strong></div>
+    </section>
+
+    <table>
+      <thead>
+        <tr>
+          <th>排名</th>
+          <th>英雄</th>
+          <th>梯队</th>
+          <th>推荐指数<span class="help-tip" tabindex="0" data-tip="综合排序用的推荐值，不是真实胜率。公式：推荐分 = 基础表现×基础权重 + 配合分×配合权重 + 对位分×对位权重；推荐指数 = 100 / (1 + 10^(-推荐分 / 400))。权重会随 BP 信息变化。">?</span></th>
+          <th>基础表现<span class="help-tip" tabindex="0" data-tip="英雄当前版本的通用强度。公式：基础表现 = Tier 先验 + 胜率修正；胜率修正 = winrateToRating(平滑英雄胜率) × min(1, sqrt(英雄场次 / 3000))；平滑英雄胜率 = (胜场 + 1000×50%) / (场次 + 1000)。">?</span></th>
+          <th>配合<span class="help-tip" tabindex="0" data-tip="候选英雄与己方搭档的组合价值。公式：配合分 = 置信度 × (65%×组合绝对表现 + 35%×超预期配合)；组合绝对表现 = winrateToRating(组合胜率相对 50% 的表现)；超预期配合 = 组合实际 rating - 双方期望 rating。">?</span></th>
+          <th>对位<span class="help-tip" tabindex="0" data-tip="候选英雄面对敌方下路的对位价值。公式：对位分 = 置信度 × (60%×对位绝对表现 + 40%×超预期对位)；超预期对位 = 实际对位 rating - 理论对位 rating。推荐辅助时更重视敌方辅助，推荐 ADC 时更重视敌方 ADC。">?</span></th>
+          <th>参考场次<span class="help-tip" tabindex="0" data-tip="用于判断本条推荐是否有足够数据支撑。公式：有 BP 信息时，参考场次 = 配合场次 + 对位场次；盲选时，参考场次 = 英雄自身基础场次。场次越高，结果越稳定。">?</span></th>
+          <th>可信度<span class="help-tip" tabindex="0" data-tip="按参考场次分级。公式：参考场次 ≥3000 为高，1000-2999 为中，300-999 为低，低于 300 为极低。可信度只说明样本是否充足，不等于这把一定好赢。">?</span></th>
+          <th>解释</th>
+        </tr>
+      </thead>
+      <tbody id="results"></tbody>
+    </table>
+    </section>
+
+    <section id="synergy_view" class="view">
+      <section class="query-grid">
+        <label>选择英雄
+          <input id="synergy_champion" autocomplete="off" placeholder="输入中文名或英文名">
+          <div class="suggestions" id="synergy_champion_suggestions"></div>
+        </label>
+        <button class="primary" id="query_synergy" type="button">查询协同</button>
+      </section>
+      <h2 class="section-title">最佳搭档</h2>
+      <table>
+        <thead><tr><th>排名</th><th>英雄</th><th>梯队</th><th>胜率</th></tr></thead>
+        <tbody id="synergy_results"></tbody>
+      </table>
+    </section>
+
+    <section id="counter_view" class="view">
+      <section class="query-grid">
+        <label>选择敌方英雄
+          <input id="counter_champion" autocomplete="off" placeholder="输入中文名或英文名">
+          <div class="suggestions" id="counter_champion_suggestions"></div>
+        </label>
+        <button class="primary" id="query_counter" type="button">查询反制</button>
+      </section>
+      <section class="split">
+        <div>
+          <h2 class="section-title">推荐 ADC</h2>
+          <table>
+            <thead><tr><th>排名</th><th>英雄</th><th>梯队</th><th>我方胜率</th></tr></thead>
+            <tbody id="counter_adc_results"></tbody>
+          </table>
+        </div>
+        <div>
+          <h2 class="section-title">推荐辅助</h2>
+          <table>
+            <thead><tr><th>排名</th><th>英雄</th><th>梯队</th><th>我方胜率</th></tr></thead>
+            <tbody id="counter_support_results"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <section id="tier_view" class="view">
+      <section class="query-grid">
+        <label>位置
+          <select id="tier_lane">
+            <option value="bottom">ADC</option>
+            <option value="support">辅助</option>
+          </select>
+        </label>
+        <button class="primary" id="query_tier" type="button">查看梯队</button>
+      </section>
+      <table>
+        <thead><tr><th>排名</th><th>英雄</th><th>梯队</th></tr></thead>
+        <tbody id="tier_results"></tbody>
+      </table>
+    </section>
+
+    <datalist id="all_champion_list"></datalist>
+    <p class="page-note">
+      数据来源：Lolalytics，韩服 Emerald+。作者：<a href="https://github.com/Dewey-0525" target="_blank" rel="noopener">Dewey-0525</a>
+    </p>
+  </main>
+
+  <script>
+    const inputs = {
+      ally_ad: document.querySelector("#ally_ad"),
+      ally_sup: document.querySelector("#ally_sup"),
+      enemy_ad: document.querySelector("#enemy_ad"),
+      enemy_sup: document.querySelector("#enemy_sup"),
+    };
+    const statusEl = document.querySelector("#status");
+    const resultsEl = document.querySelector("#results");
+    const recommendButton = document.querySelector("#recommend");
+    const clearButton = document.querySelector("#clear");
+    const filterSelect = document.querySelector("#confidence_filter");
+    const sortSelect = document.querySelector("#sort_by");
+    const roleButtons = Array.from(document.querySelectorAll("[data-role]"));
+    const tabButtons = Array.from(document.querySelectorAll("[data-view]"));
+    const synergyInput = document.querySelector("#synergy_champion");
+    const counterInput = document.querySelector("#counter_champion");
+    const tierLane = document.querySelector("#tier_lane");
+    const metrics = {
+      state: document.querySelector("#state"),
+      stateDesc: document.querySelector("#state_desc"),
+      total: document.querySelector("#total"),
+      high: document.querySelector("#high_count"),
+      update: document.querySelector("#update_time"),
+    };
+
+    let role = "support";
+    let championData = {bottom: [], support: []};
+    let latestRows = [];
+    let pendingTimer = null;
+    const tierOrder = {
+      "S+": 0, "S": 1, "S-": 2,
+      "A+": 3, "A": 4, "A-": 5,
+      "B+": 6, "B": 7, "B-": 8,
+      "C+": 9, "C": 10, "C-": 11,
+      "D+": 12, "D": 13, "D-": 14,
+    };
+
+    function option(value, text) {
+      const el = document.createElement("option");
+      el.value = value;
+      el.label = text;
+      return el;
+    }
+
+    function inputValue(champion) {
+      return `${champion.cn_name} (${champion.id})`;
+    }
+
+    function fillDatalist(selector, champions) {
+      const list = document.querySelector(selector);
+      list.innerHTML = "";
+      champions.forEach((champion) => {
+        list.appendChild(option(inputValue(champion), `${champion.name} / ${champion.tier}`));
+      });
+    }
+
+    function resolveChampion(rawValue, lane) {
+      const match = findChampion(rawValue, lane);
+      return match ? match.id : null;
+    }
+
+    function getChampionPool(lane) {
+      if (lane === "all") {
+        const seen = new Set();
+        return [...championData.bottom, ...championData.support].filter((champion) => {
+          if (seen.has(champion.id)) return false;
+          seen.add(champion.id);
+          return true;
+        });
+      }
+      return championData[lane] || [];
+    }
+
+    function findChampion(rawValue, lane) {
+      const value = rawValue.trim().toLowerCase();
+      if (!value) return null;
+      const bracketMatch = value.match(/\(([^)]+)\)/);
+      const champions = getChampionPool(lane);
+      if (bracketMatch) {
+        const id = bracketMatch[1].trim().toLowerCase();
+        return champions.find((champion) => champion.id === id) || {id};
+      }
+      const exact = champions.find((champion) => {
+        return champion.id === value ||
+          champion.cn_name.toLowerCase() === value ||
+          champion.name.toLowerCase() === value ||
+          String(champion.champion_id) === value;
+      });
+      if (exact) return exact;
+      const fuzzy = champions.find((champion) => champion.search_text.includes(value));
+      return fuzzy || null;
+    }
+
+    function canonicalizeInput(input, lane) {
+      const champion = findChampion(input.value, lane);
+      if (champion && champion.cn_name) {
+        input.value = inputValue(champion);
+      }
+      hideSuggestions(input.id);
+      return champion;
+    }
+
+    function matchedAlias(champion, value) {
+      const query = value.trim().toLowerCase();
+      if (!query) return "";
+      const aliases = champion.aliases || [];
+      const alias = aliases.find((item) => item.toLowerCase().includes(query));
+      return alias ? `匹配：${alias}` : `${champion.name} / ${champion.tier || "-"}`;
+    }
+
+    function showSuggestions(input, lane, onSelect) {
+      const box = document.querySelector(`#${input.id}_suggestions`);
+      if (!box) return;
+      const value = input.value.trim().toLowerCase();
+      if (!value) {
+        hideSuggestions(input.id);
+        return;
+      }
+      const rows = getChampionPool(lane)
+        .filter((champion) => champion.search_text.includes(value))
+        .slice(0, 8);
+      if (!rows.length) {
+        hideSuggestions(input.id);
+        return;
+      }
+      box.innerHTML = "";
+      rows.forEach((champion) => {
+        const button = document.createElement("button");
+        button.className = "suggestion";
+        button.type = "button";
+        button.innerHTML = `
+          <img src="${champion.avatar}" alt="">
+          <span><strong>${champion.cn_name}</strong><span>${matchedAlias(champion, value)}</span></span>
+        `;
+        button.addEventListener("mousedown", (event) => {
+          event.preventDefault();
+          input.value = inputValue(champion);
+          hideSuggestions(input.id);
+          if (onSelect) onSelect(champion);
+        });
+        box.appendChild(button);
+      });
+      box.classList.add("active");
+    }
+
+    function hideSuggestions(inputId) {
+      const box = document.querySelector(`#${inputId}_suggestions`);
+      if (box) box.classList.remove("active");
+    }
+
+    function valueOrNull(id) {
+      const lane = id.includes("_sup") ? "support" : "bottom";
+      return resolveChampion(inputs[id].value, lane);
+    }
+
+    function score(value) {
+      return value > 0 ? `${value}%` : "-";
+    }
+
+    function rating(value) {
+      if (value === null || value === undefined) return "-";
+      return Number(value).toFixed(1);
+    }
+
+    function confidenceClass(level) {
+      return `confidence-${level}`;
+    }
+
+    function filteredRows() {
+      const mode = filterSelect.value;
+      let rows = latestRows;
+      if (mode === "high") rows = rows.filter((row) => row.confidence_level === "high");
+      if (mode === "medium") rows = rows.filter((row) => !["low", "very_low"].includes(row.confidence_level));
+      return sortRows(rows);
+    }
+
+    function sortRows(rows) {
+      const sortBy = sortSelect.value;
+      const sorted = [...rows];
+      sorted.sort((a, b) => {
+        const diff = (b[sortBy] || 0) - (a[sortBy] || 0);
+        if (diff !== 0) return diff;
+        return b.final_rating - a.final_rating;
+      });
+      return sorted;
+    }
+
+    function renderRows() {
+      const rows = filteredRows();
+      resultsEl.innerHTML = "";
+      rows.forEach((row, index) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${index + 1}</td>
+          <td>
+            <div class="champ">
+              <img src="${row.avatar}" alt="">
+              <span>${row.display_name}<small>${row.english_name}</small></span>
+            </div>
+          </td>
+          <td><span class="badge">${row.tier}</span></td>
+          <td title="推荐指数，不是真实胜率">${row.display_winrate.toFixed(1)}</td>
+          <td>${rating(row.base_rating)}</td>
+          <td>${rating(row.synergy_bonus)}</td>
+          <td>${rating(row.counter_bonus)}</td>
+          <td>${row.sample_games ?? row.confidence_games ?? ((row.duo_games || 0) + (row.matchup_games || 0))}</td>
+          <td class="${confidenceClass(row.confidence_level)}">${row.confidence_label}</td>
+          <td class="missing">${row.explanation || row.missing_labels.join("、") || "-"}</td>
+        `;
+        resultsEl.appendChild(tr);
+      });
+    }
+
+    function scheduleRecommend() {
+      clearTimeout(pendingTimer);
+      pendingTimer = setTimeout(recommend, 250);
+    }
+
+    async function loadChampions() {
+      const res = await fetch("/api/champions");
+      const data = await res.json();
+      championData = {bottom: data.bottom, support: data.support};
+      fillDatalist("#bottom_list", data.bottom);
+      fillDatalist("#support_list", data.support);
+      fillDatalist("#all_champion_list", [...data.bottom, ...data.support]);
+      metrics.update.textContent = data.data_meta.update_time || "-";
+      statusEl.textContent = "英雄列表已加载";
+    }
+
+    async function recommend() {
+      recommendButton.disabled = true;
+      statusEl.textContent = "正在计算推荐...";
+      const payload = {
+        role,
+        top_n: 30,
+        bp_state: {
+          ally_ad: valueOrNull("ally_ad"),
+          ally_sup: valueOrNull("ally_sup"),
+          enemy_ad: valueOrNull("enemy_ad"),
+          enemy_sup: valueOrNull("enemy_sup"),
+        },
+      };
+      const res = await fetch("/api/recommend", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      latestRows = data.results || [];
+      metrics.state.textContent = data.state_info?.label || data.state || "-";
+      metrics.stateDesc.textContent = data.state_info?.description || "-";
+      metrics.total.textContent = String(data.summary?.total ?? latestRows.length);
+      metrics.high.textContent = String(data.summary?.confidence_counts?.high ?? 0);
+      renderRows();
+      statusEl.textContent = `已排除已选英雄：${(data.excluded_champions || []).join(", ") || "无"}`;
+      recommendButton.disabled = false;
+    }
+
+    roleButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        role = button.dataset.role;
+        roleButtons.forEach((item) => item.classList.toggle("active", item === button));
+        scheduleRecommend();
+      });
+    });
+    [
+      ["ally_ad", "bottom"],
+      ["ally_sup", "support"],
+      ["enemy_ad", "bottom"],
+      ["enemy_sup", "support"],
+    ].forEach(([id, lane]) => {
+      const input = inputs[id];
+      input.addEventListener("input", () => {
+        showSuggestions(input, lane, scheduleRecommend);
+        scheduleRecommend();
+      });
+      input.addEventListener("blur", () => {
+        setTimeout(() => {
+          canonicalizeInput(input, lane);
+          scheduleRecommend();
+        }, 120);
+      });
+    });
+    recommendButton.addEventListener("click", recommend);
+    clearButton.addEventListener("click", () => {
+      Object.values(inputs).forEach((input) => { input.value = ""; });
+      scheduleRecommend();
+    });
+    filterSelect.addEventListener("change", renderRows);
+    sortSelect.addEventListener("change", renderRows);
+
+    synergyInput.addEventListener("input", () => showSuggestions(synergyInput, "all"));
+    synergyInput.addEventListener("blur", () => setTimeout(() => canonicalizeInput(synergyInput, "all"), 120));
+    counterInput.addEventListener("input", () => showSuggestions(counterInput, "all"));
+    counterInput.addEventListener("blur", () => setTimeout(() => canonicalizeInput(counterInput, "all"), 120));
+
+    function renderSimpleRows(tbody, rows, scoreLabel = "win_rate") {
+      tbody.innerHTML = "";
+      rows.forEach((row, index) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${index + 1}</td>
+          <td>
+            <div class="champ">
+              <img src="${row.avatar}" alt="">
+              <span>${row.display_name || row.cn_name || row.name}<small>${row.english_name || row.name}</small></span>
+            </div>
+          </td>
+          <td><span class="badge">${row.tier || "-"}</span></td>
+          <td>${scoreLabel ? `${row[scoreLabel]}%` : ""}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function querySynergy() {
+      const match = canonicalizeInput(synergyInput, "all");
+      const champion = match ? match.id : null;
+      if (!champion) return;
+      const data = await (await fetch(`/api/synergy/${champion}?top_n=30`)).json();
+      renderSimpleRows(document.querySelector("#synergy_results"), data.results || []);
+      statusEl.textContent = `协同查询：${data.champion.display_name || data.champion.cn_name || champion}`;
+    }
+
+    async function queryCounter() {
+      const match = canonicalizeInput(counterInput, "all");
+      const champion = match ? match.id : null;
+      if (!champion) return;
+      const data = await (await fetch(`/api/counter/${champion}?top_n=10`)).json();
+      renderSimpleRows(document.querySelector("#counter_adc_results"), data.adc || []);
+      renderSimpleRows(document.querySelector("#counter_support_results"), data.support || []);
+      statusEl.textContent = `反制查询：${champion}`;
+    }
+
+    async function queryTier() {
+      const data = await (await fetch(`/api/tier/${tierLane.value}`)).json();
+      const rows = (data.results || []).map((row) => ({...row, display_name: row.cn_name, english_name: row.name}));
+      renderSimpleRows(document.querySelector("#tier_results"), rows, null);
+      statusEl.textContent = `梯队榜：${tierLane.value === "bottom" ? "ADC" : "辅助"}`;
+    }
+
+    tabButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        tabButtons.forEach((item) => item.classList.toggle("active", item === button));
+        document.querySelectorAll(".view").forEach((view) => {
+          view.classList.toggle("active", view.id === button.dataset.view);
+        });
+        if (button.dataset.view === "synergy_view") querySynergy();
+        if (button.dataset.view === "counter_view") queryCounter();
+        if (button.dataset.view === "tier_view") queryTier();
+      });
+    });
+    document.querySelector("#query_synergy").addEventListener("click", querySynergy);
+    document.querySelector("#query_counter").addEventListener("click", queryCounter);
+    document.querySelector("#query_tier").addEventListener("click", queryTier);
+    tierLane.addEventListener("change", queryTier);
+
+    loadChampions().then(recommend).catch((error) => {
+      statusEl.textContent = `加载失败：${error.message}`;
+    });
+  </script>
+</body>
+</html>

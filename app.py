@@ -237,6 +237,7 @@ def recommend():
     top_n = normalize_top_n(payload.get("top_n"))
     result = run_recommend(role, bp_state, db, top_n=top_n)
     enrich_recommendation_rows(result["results"])
+    enrich_recommendation_rows(result.get("precise_results", []))
     result["bp_display"] = build_bp_display(result["bp_state"])
     result["summary"] = build_result_summary(result["results"])
     result["ok"] = True

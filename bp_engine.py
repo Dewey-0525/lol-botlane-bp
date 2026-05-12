@@ -11,6 +11,7 @@ import math
 
 VALID_ROLES = ("support", "adc")
 VALID_KEYS = ("ally_ad", "ally_sup", "enemy_ad", "enemy_sup")
+TIME_BUCKETS = ("0-20", "20-25", "25-30", "30-35", "35+")
 
 TIER_SCORES = {
     "S+": 57,
@@ -69,6 +70,7 @@ CONFIDENCE_LABELS = {
 
 HERO_PRIOR_GAMES = 1000
 HERO_CONFIDENCE_GAMES = 3000
+TIME_PRIOR_GAMES = 500
 DUO_PRIOR_GAMES = 1000
 MATCHUP_PRIOR_GAMES = 1000
 LEGACY_RELATION_GAMES = 300
@@ -252,6 +254,10 @@ def get_hero_stat(db, lane, champion):
     hero_stats = db.get("hero_stats", {})
     lane_stats = hero_stats.get(lane, {})
     return extract_stat(lane_stats.get(champion), legacy_games=0)
+
+
+def get_hero_stats_record(db, lane, champion):
+    return db.get("hero_stats", {}).get(lane, {}).get(champion, {})
 
 
 def calculate_base_rating(db, lane, champion, tier_label=None):
@@ -604,6 +610,295 @@ def adjusted_counter_score(counter, enemy_count):
     return counter["counter_bonus"] + missing_penalty
 
 
+def normalize_time_stats(record):
+    raw_rows = record.get("stats_by_time") or record.get("statsByTime") or []
+    rows = []
+    for index, raw in enumerate(raw_rows[: len(TIME_BUCKETS)]):
+        if isinstance(raw, dict):
+            games = raw.get("games", raw.get("n", raw.get("matches", 0)))
+            wins = raw.get("wins", raw.get("timeWin", 0))
+            label = raw.get("label", TIME_BUCKETS[index])
+        elif isinstance(raw, (list, tuple)) and len(raw) >= 2:
+            wins, games = raw[0], raw[1]
+            label = TIME_BUCKETS[index]
+        else:
+            continue
+        rows.append(
+            {
+                "label": label,
+                "wins": max(0.0, float(wins or 0)),
+                "games": max(0.0, float(games or 0)),
+            }
+        )
+    return rows
+
+
+def build_hero_time_profile(db, lane, champion):
+    record = get_hero_stats_record(db, lane, champion)
+    rows = normalize_time_stats(record)
+    if not rows:
+        return None
+
+    stat = extract_stat(record)
+    if stat["winrate"] is None or stat["games"] <= 0:
+        return None
+
+    base_winrate = smooth_winrate(stat["wins"], stat["games"], 0.5, HERO_PRIOR_GAMES)
+    base_rating = winrate_to_rating(base_winrate)
+    points = []
+    for row in rows:
+        smoothed = smooth_winrate(
+            row["wins"], row["games"], base_winrate, TIME_PRIOR_GAMES
+        )
+        bonus = winrate_to_rating(smoothed) - base_rating
+        points.append(
+            {
+                "label": row["label"],
+                "时间段": row["label"],
+                "平滑胜率": round(smoothed * 100, 2),
+                "样本场次": int(row["games"]),
+                "强势偏移": round(bonus, 2),
+                "强度": describe_time_strength(bonus),
+            }
+        )
+
+    return {
+        "source": "hero",
+        "来源": "单英雄趋势",
+        "champion": champion,
+        "lane": lane,
+        "整体平滑胜率": round(base_winrate * 100, 2),
+        "points": points,
+        "summary": summarize_time_points(points),
+        "结论": summarize_time_points(points),
+    }
+
+
+def combine_time_profiles(label, profiles):
+    usable = [profile for profile in profiles if profile and profile.get("points")]
+    if not usable:
+        return None
+    points = []
+    for index, bucket in enumerate(TIME_BUCKETS):
+        bucket_points = [
+            profile["points"][index]
+            for profile in usable
+            if index < len(profile.get("points", []))
+        ]
+        if not bucket_points:
+            continue
+        bonus = sum(point["强势偏移"] for point in bucket_points)
+        games = sum(point["样本场次"] for point in bucket_points)
+        avg_wr = sum(point["平滑胜率"] for point in bucket_points) / len(bucket_points)
+        points.append(
+            {
+                "label": bucket,
+                "时间段": bucket,
+                "平滑胜率": round(avg_wr, 2),
+                "样本场次": int(games),
+                "强势偏移": round(bonus, 2),
+                "强度": describe_time_strength(bonus),
+            }
+        )
+    return {
+        "source": "lane_combo",
+        "来源": "英雄趋势加总",
+        "label": label,
+        "points": points,
+        "summary": summarize_time_points(points),
+        "结论": summarize_time_points(points),
+    }
+
+
+def describe_time_strength(bonus):
+    if bonus >= 12:
+        return "强"
+    if bonus <= -12:
+        return "弱"
+    return "中"
+
+
+def summarize_time_points(points):
+    if not points:
+        return "暂无时间线数据"
+    best = max(points, key=lambda item: item["强势偏移"])
+    worst = min(points, key=lambda item: item["强势偏移"])
+    spread = best["强势偏移"] - worst["强势偏移"]
+    if spread < 8:
+        return "曲线平稳"
+    if best["时间段"] in ("0-20", "20-25"):
+        return "偏前中期强势"
+    if best["时间段"] in ("30-35", "35+"):
+        return "偏后期强势"
+    return "偏中期强势"
+
+
+def build_side_time_profile(db, champions):
+    profiles = []
+    names = []
+    for champion, lane in champions:
+        profile = build_hero_time_profile(db, lane, champion)
+        if profile:
+            profiles.append(profile)
+            names.append(champion)
+    if not profiles:
+        return None
+    if len(profiles) == 1:
+        profile = profiles[0].copy()
+        profile["label"] = names[0]
+        profile["来源"] = "单英雄趋势"
+        return profile
+    return combine_time_profiles(" + ".join(names), profiles)
+
+
+def build_time_detail(db, role, candidate, ally, bp_state):
+    candidate_lane = "support" if role == "support" else "bottom"
+    candidate_profile = build_hero_time_profile(db, candidate_lane, candidate)
+    profiles = []
+    if candidate_profile:
+        profiles.append(
+            {
+                "title": f"{candidate} 自身时间线",
+                "kind": "hero",
+                **candidate_profile,
+            }
+        )
+
+    combo_profile = None
+    if ally:
+        partner_lane = "bottom" if role == "support" else "support"
+        partner_profile = build_hero_time_profile(db, partner_lane, ally)
+        combo_profile = combine_time_profiles(f"{ally} + {candidate}", [partner_profile, candidate_profile])
+        if combo_profile:
+            profiles.insert(
+                0,
+                {
+                    "title": f"{ally} + {candidate} 组合时间线",
+                    "kind": "combo",
+                    **combo_profile,
+                },
+            )
+
+    primary = combo_profile or candidate_profile
+    enemy_champions = []
+    if bp_state.get("enemy_ad"):
+        enemy_champions.append((bp_state["enemy_ad"], "bottom"))
+    if bp_state.get("enemy_sup"):
+        enemy_champions.append((bp_state["enemy_sup"], "support"))
+    enemy_profile = build_side_time_profile(db, enemy_champions)
+
+    note = "我方线基于推荐英雄自身时间段表现。"
+    if combo_profile:
+        note = "我方线由己方 ADC 与推荐英雄各自的时间段强势偏移加总推算。"
+    if enemy_profile:
+        if len(enemy_champions) == 1:
+            note += " 敌方线基于当前已知的单个敌方英雄，仅作参考。"
+        else:
+            note += " 敌方线由敌方 ADC 与辅助各自的时间段强势偏移加总推算。"
+    else:
+        note += " 当前敌方下路未知，暂不显示敌方参考线。"
+
+    return {
+        "available": primary is not None,
+        "primary": primary,
+        "ally": primary,
+        "enemy": enemy_profile,
+        "profiles": profiles,
+        "note": note,
+        "说明": note,
+        "口径": "强势偏移 = 该英雄该时间段表现 - 该英雄自身整体平均表现；下路趋势为 ADC 与辅助的强势偏移加总，不代表真实 duo 组合分时胜率。",
+    }
+
+
+def precision_confidence_bonus(level):
+    return {"high": 2.0, "medium": 1.0, "low": -1.0, "very_low": -3.0}.get(level, 0.0)
+
+
+def precision_tier_bonus(tier):
+    if tier in ("S+", "S", "S-", "A+", "A", "A-"):
+        return 1.0
+    if tier in ("C+", "C", "C-", "D+", "D", "D-"):
+        return -1.0
+    return 0.0
+
+
+def build_precision_meta(db, role, bp_state, row, ally):
+    data_bonus = 0.0
+    if row.get("duo_games", 0) > 0:
+        data_bonus += 1.0
+    if row.get("matchup_games", 0) > 0:
+        data_bonus += 1.0
+    missing_penalty = len(row.get("missing_fields", [])) * 1.5
+    precision_score = (
+        row["display_winrate"]
+        + precision_confidence_bonus(row.get("confidence_level"))
+        + data_bonus
+        + precision_tier_bonus(row.get("tier"))
+        - missing_penalty
+    )
+
+    tags = []
+    if row.get("confidence_level") in ("high", "medium") and not row.get("missing_fields"):
+        tags.append("稳健首选")
+    if row.get("base_rating", 0) >= 12:
+        tags.append("版本强势")
+    if row.get("synergy_bonus", 0) >= 8:
+        tags.append("搭档适配")
+    if row.get("counter_bonus", 0) >= 8:
+        tags.append("对位优势")
+    if row["display_winrate"] >= 53 and row.get("confidence_level") in ("low", "very_low"):
+        tags.append("高收益选择")
+    if row.get("confidence_level") in ("low", "very_low"):
+        tags.append("样本偏少")
+    if row.get("missing_fields"):
+        tags.append("数据不足")
+    if not tags:
+        tags.append("综合推荐")
+
+    time_detail = build_time_detail(db, role, row["name"], ally, bp_state)
+    if time_detail.get("primary"):
+        tags.append(time_detail["primary"]["summary"])
+
+    reasons = [row.get("explanation", "").rstrip("。")]
+    if row.get("synergy_residual_score", 0) >= 5:
+        reasons.append("组合历史表现高于理论预期")
+    if row.get("counter_residual_score", 0) >= 5:
+        reasons.append("当前对位表现高于理论预期")
+    if time_detail.get("primary"):
+        reasons.append(f"时间线显示{time_detail['primary']['summary']}")
+    reason = "；".join(part for part in reasons if part) + "。"
+
+    risks = []
+    if row.get("confidence_level") in ("low", "very_low"):
+        risks.append("样本量偏少，建议结合熟练度判断。")
+    if row.get("missing_labels"):
+        risks.append("、".join(row["missing_labels"]) + "。")
+    if time_detail.get("available") is False:
+        risks.append("当前缓存暂无时间段强势数据，更新数据后可显示曲线。")
+    if not risks:
+        risks.append("暂无明显数据风险，仍需结合阵容和熟练度。")
+
+    return {
+        "precision_score": round(precision_score, 2),
+        "precision_tags": tags[:4],
+        "precision_reason": reason,
+        "precision_detail": {
+            "conclusion": reason,
+            "timeline": time_detail,
+            "data": {
+                "recommend_index": row["display_winrate"],
+                "confidence_label": row.get("confidence_label"),
+                "base_rating": row.get("base_rating"),
+                "synergy_bonus": row.get("synergy_bonus"),
+                "counter_bonus": row.get("counter_bonus"),
+                "duo_games": row.get("duo_games"),
+                "matchup_games": row.get("matchup_games"),
+            },
+            "risks": risks,
+        },
+    }
+
+
 def run_recommend(role, bp_state, db, top_n=None):
     """
     返回推荐结果，不打印。
@@ -722,6 +1017,7 @@ def run_recommend(role, bp_state, db, top_n=None):
         }
         row.update(build_display_meta(row, ally, enemies, has_context=bool(ally or enemies)))
         row["explanation"] = build_explanation(row, ally, enemies)
+        row.update(build_precision_meta(db, role, bp_state, row, ally))
         # Legacy aliases keep existing clients usable while the UI migrates.
         row["final_score"] = row["display_winrate"]
         row["counter_score"] = row["counter_bonus"]
@@ -730,6 +1026,9 @@ def run_recommend(role, bp_state, db, top_n=None):
         results.append(row)
 
     results.sort(key=lambda item: item["final_rating"], reverse=True)
+    precise_results = sorted(
+        results, key=lambda item: item.get("precision_score", item["final_rating"]), reverse=True
+    )[:5]
     if top_n is not None:
         results = results[:top_n]
 
@@ -746,33 +1045,93 @@ def run_recommend(role, bp_state, db, top_n=None):
         "weights": round_weights(component_weights),
         "score_model": "absolute_residual_blend_v2",
         "results": results,
+        "precise_results": precise_results,
         "meta": db.get("meta", {}),
     }
 
 
 def find_counter_picks(enemy, role, db, top_n=5):
     """
-    查“谁打 enemy 更好打”。
+    查“敌方选了 enemy，我方选谁更好打”。
 
-    这和 DB['counter'][enemy] 不同；这里会遍历候选池，让每个候选英雄查自己的
-    matchup 表，方向更符合“敌方选了 X，我该选谁”的语义。
+    单英雄克制查询采用双向校验：
+    1. 正向：候选英雄自己的 matchup 表里，候选打 enemy 的胜率。
+    2. 反向：enemy 自己的 matchup 表里，enemy 打候选的胜率，再反推为我方胜率。
+
+    两边按 sqrt(场次) 加权融合。这样既保留候选英雄视角，也让结果
+    更贴近“敌方选了 X，我方选谁更克制 X”的查询语义。
     """
     enemy = normalize_champion(enemy)
     role = normalize_champion(role)
     meta = get_role_meta(role)
-    enemy_key = "vs_adc" if enemy in db["tiers"].get("bottom", {}) else "vs_sup"
+    enemy_key_for_candidate = (
+        "vs_adc" if enemy in db["tiers"].get("bottom", {}) else "vs_sup"
+    )
+    candidate_key_for_enemy = "vs_adc" if role == "adc" else "vs_sup"
+    enemy_matchups = db.get("counter", {}).get(enemy, {}).get(candidate_key_for_enemy, {})
 
     results = []
     for champ, tier in db["tiers"].get(meta["lane"], {}).items():
         if tier == "?":
             continue
-        stat = extract_stat(
-            db["counter"].get(champ, {}).get(enemy_key, {}).get(enemy),
+        forward_stat = extract_stat(
+            db.get("counter", {}).get(champ, {}).get(enemy_key_for_candidate, {}).get(enemy),
             legacy_games=LEGACY_RELATION_GAMES,
         )
-        win_rate = stat["winrate"] * 100 if stat["winrate"] is not None else 0.0
-        if win_rate <= 0:
+        reverse_stat = extract_stat(enemy_matchups.get(champ), legacy_games=0)
+
+        evidence = []
+        if forward_stat["winrate"] is not None and forward_stat["games"] > 0:
+            evidence.append(
+                {
+                    "win_rate": forward_stat["winrate"] * 100,
+                    "games": int(forward_stat["games"]),
+                    "weight": math.sqrt(forward_stat["games"]),
+                }
+            )
+        if reverse_stat["winrate"] is not None and reverse_stat["games"] > 0:
+            evidence.append(
+                {
+                    "win_rate": (1 - reverse_stat["winrate"]) * 100,
+                    "games": int(reverse_stat["games"]),
+                    "weight": math.sqrt(reverse_stat["games"]),
+                }
+            )
+        if not evidence:
             continue
+
+        total_weight = sum(item["weight"] for item in evidence)
+        win_rate = sum(item["win_rate"] * item["weight"] for item in evidence) / total_weight
+        total_games = sum(item["games"] for item in evidence)
+        forward_win_rate = (
+            forward_stat["winrate"] * 100
+            if forward_stat["winrate"] is not None and forward_stat["games"] > 0
+            else None
+        )
+        reverse_win_rate = (
+            (1 - reverse_stat["winrate"]) * 100
+            if reverse_stat["winrate"] is not None and reverse_stat["games"] > 0
+            else None
+        )
+        consistency_gap = (
+            abs(forward_win_rate - reverse_win_rate)
+            if forward_win_rate is not None and reverse_win_rate is not None
+            else None
+        )
+        confidence_level = confidence_from_games(total_games)
+        if consistency_gap is None:
+            data_note = "单向数据参考"
+        elif consistency_gap <= 2:
+            data_note = "双向数据一致"
+        elif consistency_gap <= 5:
+            data_note = "双向数据基本一致"
+        else:
+            data_note = "双向数据分歧较大"
+
+        consistency_penalty = max(0.0, (consistency_gap or 0.0) - 2.0) * 0.25
+        single_side_penalty = 2.5 if len(evidence) < 2 else 0.0
+        sample_bonus = min(1.5, math.sqrt(total_games / 3000) * 1.5)
+        counter_index = win_rate + sample_bonus - consistency_penalty - single_side_penalty
         results.append(
             {
                 "name": champ,
@@ -780,9 +1139,24 @@ def find_counter_picks(enemy, role, db, top_n=5):
                 "role_label": meta["label"],
                 "tier": tier,
                 "win_rate": round(win_rate, 2),
-                "games": int(stat["games"]),
+                "counter_index": round(counter_index, 2),
+                "forward_win_rate": (
+                    round(forward_win_rate, 2) if forward_win_rate is not None else None
+                ),
+                "forward_games": int(forward_stat["games"]),
+                "reverse_win_rate": (
+                    round(reverse_win_rate, 2) if reverse_win_rate is not None else None
+                ),
+                "reverse_games": int(reverse_stat["games"]),
+                "games": int(total_games),
+                "consistency_gap": (
+                    round(consistency_gap, 2) if consistency_gap is not None else None
+                ),
+                "confidence_level": confidence_level,
+                "confidence_label": CONFIDENCE_LABELS[confidence_level],
+                "data_note": data_note,
             }
         )
 
-    results.sort(key=lambda item: item["win_rate"], reverse=True)
+    results.sort(key=lambda item: item["counter_index"], reverse=True)
     return results[:top_n]

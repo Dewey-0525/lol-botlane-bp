@@ -38,6 +38,7 @@ def fetch_tiers():
                 hero_stats[lane][champion] = {
                     "win_rate": champ.get("win_rate"),
                     "games": champ.get("matches", 0),
+                    "stats_by_time": champ.get("stats_by_time", []),
                 }
         except Exception as e:
             print(f"\n  获取 {lane} 梯队失败: {e}")

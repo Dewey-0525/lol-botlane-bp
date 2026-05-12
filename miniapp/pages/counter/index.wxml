@@ -11,7 +11,7 @@
         <image class="avatar" src="{{apiBase}}{{item.avatar}}" mode="aspectFill" />
         <view class="grow">
           <view class="name">{{index + 1}}. {{item.display_name}}</view>
-          <view class="sub">{{item.english_name}} · 我方胜率 {{item.win_rate}}%</view>
+          <view class="sub">{{item.english_name}} · 我方胜率 {{item.win_rate}}% · 场次 {{item.games}}</view>
         </view>
         <view class="badge">{{item.tier}}</view>
       </view>
@@ -24,7 +24,7 @@
         <image class="avatar" src="{{apiBase}}{{item.avatar}}" mode="aspectFill" />
         <view class="grow">
           <view class="name">{{index + 1}}. {{item.display_name}}</view>
-          <view class="sub">{{item.english_name}} · 我方胜率 {{item.win_rate}}%</view>
+          <view class="sub">{{item.english_name}} · 我方胜率 {{item.win_rate}}% · 场次 {{item.games}}</view>
         </view>
         <view class="badge">{{item.tier}}</view>
       </view>

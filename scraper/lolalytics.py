@@ -26,6 +26,7 @@ HEADERS = {
 
 _cache = {}
 MIN_GAMES = 300  # 最低场次阈值
+TIME_BUCKETS = ["0-20", "20-25", "25-30", "30-35", "35+"]
 
 
 def _to_base36(num):
@@ -56,6 +57,66 @@ def _find_target(objs):
         if isinstance(obj, dict) and "analysed" in obj and "avgWr" in obj and "enemy" in obj:
             return i
     return None
+
+
+def _find_time_container(obj):
+    if isinstance(obj, dict):
+        if (
+            "time" in obj
+            and "timeWin" in obj
+            and isinstance(obj.get("time"), (dict, list))
+            and isinstance(obj.get("timeWin"), (dict, list))
+        ):
+            return obj
+        for value in obj.values():
+            found = _find_time_container(value)
+            if found:
+                return found
+    elif isinstance(obj, list):
+        for value in obj:
+            found = _find_time_container(value)
+            if found:
+                return found
+    return None
+
+
+def extract_stats_by_time(data):
+    container = _find_time_container(data)
+    if not container:
+        return []
+    games_by_time = container.get("time") or []
+    wins_by_time = container.get("timeWin") or []
+
+    if isinstance(games_by_time, dict) and isinstance(wins_by_time, dict):
+        # Lolalytics currently exposes seven duration buckets:
+        # 1:<15, 2:15-20, 3:20-25, 4:25-30, 5:30-35, 6:35-40, 7:40+.
+        # DraftGap-style display combines them into 0-20, 20-25, 25-30, 30-35, 35+.
+        bucket_groups = [
+            ("0-20", ("1", "2")),
+            ("20-25", ("3",)),
+            ("25-30", ("4",)),
+            ("30-35", ("5",)),
+            ("35+", ("6", "7")),
+        ]
+        result = []
+        for label, keys in bucket_groups:
+            games = sum(float(games_by_time.get(key, 0) or 0) for key in keys)
+            wins = sum(float(wins_by_time.get(key, 0) or 0) for key in keys)
+            result.append({"label": label, "wins": wins, "games": games})
+        return result
+
+    result = []
+    for index, (games, wins) in enumerate(zip(games_by_time, wins_by_time)):
+        if index >= len(TIME_BUCKETS):
+            break
+        result.append(
+            {
+                "label": TIME_BUCKETS[index],
+                "wins": float(wins or 0),
+                "games": float(games or 0),
+            }
+        )
+    return result
 
 
 def get_synergy(champion_name, patch="16.9", region="kr", lane="bottom"):
@@ -223,6 +284,7 @@ def get_champion_tier(champion_name: str, patch="16.9", lane="bottom", region="k
             "ban_rate": header.get("br"),          # 禁用率
             "matches": header.get("n"),            # 总场次
             "damage": header.get("damage"),        # 伤害分布字典
+            "stats_by_time": extract_stats_by_time(data),
         }
     except Exception as e:
         # print(f"[Tier] 获取 {champion_name} 梯队失败: {e}")

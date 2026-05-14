@@ -593,9 +593,9 @@
       <select id="sort_by" aria-label="排序方式">
         <option value="final_rating">按推荐结果</option>
         <option value="display_winrate">按推荐指数</option>
-        <option value="base_rating">按基础表现</option>
-        <option value="counter_bonus">按对位</option>
-        <option value="synergy_bonus">按配合</option>
+        <option value="base_adjusted_score">按基础有效分</option>
+        <option value="counter_final_score">按对位有效分</option>
+        <option value="synergy_final_score">按配合有效分</option>
       </select>
     </section>
 
@@ -617,12 +617,12 @@
           <th>排名</th>
           <th>英雄</th>
           <th>梯队</th>
-          <th>推荐指数<span class="help-tip" tabindex="0" data-tip="综合排序用的推荐值，不是真实胜率。公式：推荐分 = 基础表现×基础权重 + 配合分×配合权重 + 对位分×对位权重；推荐指数 = 100 / (1 + 10^(-推荐分 / 400))。权重会随 BP 信息变化。">?</span></th>
-          <th>基础表现<span class="help-tip" tabindex="0" data-tip="英雄当前版本的通用强度。公式：基础表现 = Tier 先验 + 胜率修正；胜率修正 = winrateToRating(平滑英雄胜率) × min(1, sqrt(英雄场次 / 3000))；平滑英雄胜率 = (胜场 + 1000×50%) / (场次 + 1000)。">?</span></th>
-          <th>配合<span class="help-tip" tabindex="0" data-tip="候选英雄与己方搭档的组合价值。公式：配合分 = 置信度 × (65%×组合绝对表现 + 35%×超预期配合)；组合绝对表现 = winrateToRating(组合胜率相对 50% 的表现)；超预期配合 = 组合实际 rating - 双方期望 rating。">?</span></th>
-          <th>对位<span class="help-tip" tabindex="0" data-tip="候选英雄面对敌方下路的对位价值。公式：对位分 = 置信度 × (60%×对位绝对表现 + 40%×超预期对位)；超预期对位 = 实际对位 rating - 理论对位 rating。推荐辅助时更重视敌方辅助，推荐 ADC 时更重视敌方 ADC。">?</span></th>
+          <th>推荐指数<span class="help-tip" tabindex="0" data-tip="综合排序用的推荐值，不是真实胜率。新版公式：推荐分 = 基础权重×基础有效分 + 配合权重×配合有效分 + 对位权重×对位有效分；推荐指数 = 100 / (1 + 10^(-推荐分 / 400))。权重仍会随 BP 信息变化。">?</span></th>
+          <th>基础有效分<span class="help-tip" tabindex="0" data-tip="用于排序的基础分，已做平滑。公式：基础有效分 = 30 × tanh(原始基础分 / 30)。作用是压低极端基础分的统治力，让配合和对位更能影响结果。">?</span></th>
+          <th>配合有效分<span class="help-tip" tabindex="0" data-tip="用于排序的配合分。公式：配合有效分 = 配合修正分 + 组合场次加成；组合场次加成 = min(4, log(1+组合场次) / log(1+8000) × 4)。如果配合修正分 < -3，则不加场次分，避免高场次弱组合被误抬。">?</span></th>
+          <th>对位有效分<span class="help-tip" tabindex="0" data-tip="用于排序的对位分。公式：对位有效分 = 对位修正分 + 对位场次加成；对位场次加成 = min(3, log(1+对位场次) / log(1+5000) × 3)。如果对位修正分 < -3，则不加场次分，避免高场次劣势对位被误抬。">?</span></th>
           <th>参考场次<span class="help-tip" tabindex="0" data-tip="用于判断本条推荐是否有足够数据支撑。公式：有 BP 信息时，参考场次 = 配合场次 + 对位场次；盲选时，参考场次 = 英雄自身基础场次。场次越高，结果越稳定。">?</span></th>
-          <th>可信度<span class="help-tip" tabindex="0" data-tip="按参考场次分级。公式：参考场次 ≥3000 为高，1000-2999 为中，300-999 为低，低于 300 为极低。可信度只说明样本是否充足，不等于这把一定好赢。">?</span></th>
+          <th>可信度<span class="help-tip" tabindex="0" data-tip="按参考场次分级。公式：参考场次 ≥3000 为高，1000-2999 为中，300-999 为低，低于 300 为极低。精确推荐会优先选择高/中可信度，并默认避开极低可信度结果。">?</span></th>
           <th>解释</th>
         </tr>
       </thead>
@@ -933,9 +933,9 @@
           </td>
           <td><span class="badge">${row.tier}</span></td>
           <td title="推荐指数，不是真实胜率">${row.display_winrate.toFixed(1)}</td>
-          <td>${rating(row.base_rating)}</td>
-          <td>${rating(row.synergy_bonus)}</td>
-          <td>${rating(row.counter_bonus)}</td>
+          <td title="原始基础 ${rating(row.base_rating)}">${rating(row.base_adjusted_score ?? row.base_rating)}</td>
+          <td title="原始配合 ${rating(row.synergy_bonus)}；场次加成 +${row.synergy_games_bonus ?? 0}">${rating(row.synergy_final_score ?? row.synergy_bonus)}</td>
+          <td title="原始对位 ${rating(row.counter_bonus)}；场次加成 +${row.counter_games_bonus ?? 0}">${rating(row.counter_final_score ?? row.counter_bonus)}</td>
           <td>${row.sample_games ?? row.confidence_games ?? ((row.duo_games || 0) + (row.matchup_games || 0))}</td>
           <td class="${confidenceClass(row.confidence_level)}">${row.confidence_label}</td>
           <td class="missing">${row.explanation || row.missing_labels.join("、") || "-"}</td>
@@ -974,7 +974,7 @@
         .map((tag) => `<span class="tag">${tag}</span>`).join("");
       const data = detail.data || {};
       document.querySelector("#precision_data").textContent =
-        `推荐指数 ${data.recommend_index ?? "-"}；可信度 ${data.confidence_label ?? "-"}；基础表现 ${data.base_rating ?? "-"}；配合 ${data.synergy_bonus ?? "-"}；对位 ${data.counter_bonus ?? "-"}；配合场次 ${data.duo_games ?? 0}；对位场次 ${data.matchup_games ?? 0}。时间线为英雄单位置时间段强势偏移加总推算，不代表真实双人组分时胜率。`;
+        `推荐指数 ${data.recommend_index ?? "-"}；可信度 ${data.confidence_label ?? "-"}；基础表现 ${data.base_rating ?? "-"}（排序平滑后 ${data.base_adjusted_score ?? "-"}）；配合 ${data.synergy_bonus ?? "-"}（场次加成后 ${data.synergy_final_score ?? "-"}，+${data.synergy_games_bonus ?? 0}）；对位 ${data.counter_bonus ?? "-"}（场次加成后 ${data.counter_final_score ?? "-"}，+${data.counter_games_bonus ?? 0}）；配合场次 ${data.duo_games ?? 0}；对位场次 ${data.matchup_games ?? 0}。时间线为英雄单位置时间段强势偏移加总推算，不代表真实双人组分时胜率。`;
       document.querySelector("#precision_risks").innerHTML = (detail.risks || ["暂无明显数据风险。"]).join("<br>");
       renderTimeline(detail.timeline || {});
       precisionModal.classList.add("active");

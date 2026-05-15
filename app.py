@@ -182,6 +182,9 @@ def build_champion_list(db, lane):
         if tier == "?":
             continue
         champion = enrich_champion(name, tier)
+        stat = extract_stat(db.get("hero_stats", {}).get(lane, {}).get(name), legacy_games=0)
+        champion["win_rate"] = round(stat["winrate"] * 100, 2) if stat["winrate"] else 0
+        champion["games"] = int(stat["games"])
         champions.append(champion)
     return champions
 

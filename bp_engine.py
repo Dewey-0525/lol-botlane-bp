@@ -75,10 +75,20 @@ DUO_PRIOR_GAMES = 1000
 MATCHUP_PRIOR_GAMES = 1000
 LEGACY_RELATION_GAMES = 300
 RELATION_CONFIDENCE_GAMES = 1500
-SYNERGY_ABSOLUTE_WEIGHT = 0.65
-SYNERGY_RESIDUAL_WEIGHT = 0.35
-COUNTER_ABSOLUTE_WEIGHT = 0.60
-COUNTER_RESIDUAL_WEIGHT = 0.40
+SYNERGY_ABSOLUTE_WEIGHT = 0.55
+SYNERGY_RESIDUAL_WEIGHT = 0.25
+COUNTER_ABSOLUTE_WEIGHT = 0.55
+COUNTER_RESIDUAL_WEIGHT = 0.25
+RELATION_MATURITY_WEIGHT = 0.20
+RELATION_MATURITY_REFERENCE_GAMES = 3000
+RELATION_LOCAL_MATURITY_FACTOR = 0.85
+RELATION_MATURITY_MIN_WINRATE = 0.485
+MATURE_RELATION_FLOOR_GAMES = 10000
+MATURE_RELATION_FLOOR_WINRATE = 0.49
+MATURE_RELATION_FLOOR_MIN_GAP = -1.0
+MATURE_RELATION_FLOOR_SCORE = 3.0
+COMPONENT_CALIBRATION_SCALE = 30.0
+COMPONENT_CALIBRATION_LIMIT = 30.0
 STRONG_RELATION_WINRATE = 0.54
 STRONG_RELATION_GAMES = 1000
 STRONG_SYNERGY_FLOOR = 8.0
@@ -167,6 +177,27 @@ def relation_confidence(games):
     return min(1, math.sqrt(max(0, float(games or 0)) / RELATION_CONFIDENCE_GAMES))
 
 
+def relation_maturity_score(games, local_top_games=0, actual_absolute_winrate=None):
+    if actual_absolute_winrate is not None and actual_absolute_winrate < RELATION_MATURITY_MIN_WINRATE:
+        return 0.0
+    games = max(0, float(games or 0))
+    if games <= 0:
+        return 0.0
+    global_maturity = min(
+        10.0,
+        math.log1p(games) / math.log1p(RELATION_MATURITY_REFERENCE_GAMES) * 10.0,
+    )
+    local_top_games = max(0, float(local_top_games or 0))
+    if local_top_games <= 0:
+        return global_maturity
+    local_maturity = min(10.0, games / local_top_games * 10.0)
+    return max(global_maturity, RELATION_LOCAL_MATURITY_FACTOR * local_maturity)
+
+
+def calibrated_component_score(value):
+    return math.tanh(float(value or 0) / COMPONENT_CALIBRATION_SCALE) * COMPONENT_CALIBRATION_LIMIT
+
+
 def blended_relation_score(
     stat,
     expected_rating,
@@ -174,6 +205,7 @@ def blended_relation_score(
     residual_weight,
     prior_games,
     positive_floor=0.0,
+    local_top_games=0,
 ):
     if stat["games"] <= 0:
         expected_winrate = rating_to_winrate(expected_rating)
@@ -185,6 +217,7 @@ def blended_relation_score(
             "expected_winrate": expected_winrate,
             "actual_winrate": None,
             "actual_absolute_winrate": None,
+            "maturity_score": 0.0,
         }
 
     expected_winrate = rating_to_winrate(expected_rating)
@@ -198,9 +231,14 @@ def blended_relation_score(
     actual_absolute_rating = winrate_to_rating(actual_absolute_winrate)
     absolute_score = actual_absolute_rating
     residual_score = actual_rating - expected_rating
+    maturity_score = relation_maturity_score(
+        stat["games"], local_top_games, actual_absolute_winrate
+    )
     confidence = relation_confidence(stat["games"])
     score = confidence * (
-        absolute_weight * absolute_score + residual_weight * residual_score
+        absolute_weight * absolute_score
+        + residual_weight * residual_score
+        + RELATION_MATURITY_WEIGHT * maturity_score
     )
 
     raw_winrate = stat["wins"] / stat["games"] if stat["games"] > 0 else None
@@ -211,6 +249,12 @@ def blended_relation_score(
         and positive_floor > 0
     ):
         score = max(score, positive_floor)
+    if (
+        actual_absolute_winrate >= MATURE_RELATION_FLOOR_WINRATE
+        and stat["games"] >= MATURE_RELATION_FLOOR_GAMES
+        and (actual_winrate - expected_winrate) * 100 >= MATURE_RELATION_FLOOR_MIN_GAP
+    ):
+        score = max(score, MATURE_RELATION_FLOOR_SCORE)
 
     return {
         "score": score,
@@ -220,6 +264,7 @@ def blended_relation_score(
         "expected_winrate": expected_winrate,
         "actual_winrate": actual_winrate,
         "actual_absolute_winrate": actual_absolute_winrate,
+        "maturity_score": maturity_score,
     }
 
 
@@ -248,6 +293,19 @@ def get_relation_stat(matrix, champion, target):
     if direct is not None:
         return direct
     return matrix.get(target, {}).get(champion)
+
+
+def top_relation_games(matrix, champion):
+    top_games = 0
+    for target, raw in matrix.get(champion, {}).items():
+        top_games = max(top_games, int(extract_stat(raw, legacy_games=LEGACY_RELATION_GAMES)["games"]))
+    for source, targets in matrix.items():
+        if source == champion:
+            continue
+        raw = targets.get(champion)
+        if raw is not None:
+            top_games = max(top_games, int(extract_stat(raw, legacy_games=LEGACY_RELATION_GAMES)["games"]))
+    return top_games
 
 
 def get_hero_stat(db, lane, champion):
@@ -289,6 +347,7 @@ def calculate_synergy_bonus(
             "synergy_bonus": 0.0,
             "synergy_absolute_score": 0.0,
             "synergy_residual_score": 0.0,
+            "synergy_maturity_score": 0.0,
             "synergy_confidence": 0.0,
             "duo_games": 0,
             "expected_duo_winrate": None,
@@ -297,8 +356,9 @@ def calculate_synergy_bonus(
         }
 
     expected_rating = candidate_expectation_rating + partner_expectation_rating
+    synergy_matrix = db.get("synergy", {})
     stat = extract_stat(
-        get_relation_stat(db.get("synergy", {}), partner, candidate),
+        get_relation_stat(synergy_matrix, partner, candidate),
         legacy_games=LEGACY_RELATION_GAMES,
     )
     blended = blended_relation_score(
@@ -308,11 +368,13 @@ def calculate_synergy_bonus(
         SYNERGY_RESIDUAL_WEIGHT,
         DUO_PRIOR_GAMES,
         STRONG_SYNERGY_FLOOR,
+        local_top_games=top_relation_games(synergy_matrix, partner),
     )
     return {
         "synergy_bonus": blended["score"],
         "synergy_absolute_score": blended["absolute_score"],
         "synergy_residual_score": blended["residual_score"],
+        "synergy_maturity_score": blended["maturity_score"],
         "synergy_confidence": blended["confidence"],
         "duo_games": int(stat["games"]),
         "expected_duo_winrate": blended["expected_winrate"],
@@ -329,6 +391,14 @@ def get_matchup_stat(db, candidate, enemy, enemy_role):
     )
 
 
+def top_matchup_games(db, candidate, enemy_role):
+    matchup_key = "vs_adc" if enemy_role == "adc" else "vs_sup"
+    top_games = 0
+    for raw in db.get("counter", {}).get(candidate, {}).get(matchup_key, {}).values():
+        top_games = max(top_games, int(extract_stat(raw, legacy_games=LEGACY_RELATION_GAMES)["games"]))
+    return top_games
+
+
 def counter_role_weight(recommend_role, enemy_role):
     if recommend_role == "support":
         return 1.35 if enemy_role == "support" else 1.0
@@ -341,6 +411,7 @@ def calculate_counter_bonus(db, candidate, enemies, candidate_expectation_rating
     weighted_bonuses = []
     weighted_absolute_scores = []
     weighted_residual_scores = []
+    weighted_maturity_scores = []
     weights = []
     games = 0
     valid_count = 0
@@ -363,11 +434,13 @@ def calculate_counter_bonus(db, candidate, enemies, candidate_expectation_rating
             COUNTER_RESIDUAL_WEIGHT,
             MATCHUP_PRIOR_GAMES,
             STRONG_COUNTER_FLOOR,
+            local_top_games=top_matchup_games(db, candidate, enemy_role),
         )
         weight = counter_role_weight(role, enemy_role)
         weighted_bonuses.append(blended["score"] * weight)
         weighted_absolute_scores.append(blended["absolute_score"] * weight)
         weighted_residual_scores.append(blended["residual_score"] * weight)
+        weighted_maturity_scores.append(blended["maturity_score"] * weight)
         weights.append(weight)
         games += int(stat["games"])
         expected_rates.append(blended["expected_winrate"])
@@ -382,6 +455,7 @@ def calculate_counter_bonus(db, candidate, enemies, candidate_expectation_rating
             "counter_bonus": 0.0,
             "counter_absolute_score": 0.0,
             "counter_residual_score": 0.0,
+            "counter_maturity_score": 0.0,
             "counter_confidence": 0.0,
             "matchup_games": 0,
             "expected_matchup_winrate": None,
@@ -395,6 +469,7 @@ def calculate_counter_bonus(db, candidate, enemies, candidate_expectation_rating
         "counter_bonus": sum(weighted_bonuses) / total_weight,
         "counter_absolute_score": sum(weighted_absolute_scores) / total_weight,
         "counter_residual_score": sum(weighted_residual_scores) / total_weight,
+        "counter_maturity_score": sum(weighted_maturity_scores) / total_weight,
         "counter_confidence": sum(confidence_values) / len(confidence_values),
         "matchup_games": games,
         "expected_matchup_winrate": sum(expected_rates) / len(expected_rates),
@@ -440,7 +515,7 @@ def build_explanation(row, ally, enemies):
     parts = []
     parts.append(
         describe_rating(
-            row.get("base_adjusted_score", row["base_rating"]),
+            row["base_rating"],
             "基础表现较高",
             "基础表现偏低",
             "基础表现接近平均",
@@ -453,7 +528,7 @@ def build_explanation(row, ally, enemies):
         else:
             parts.append(
                 describe_bonus(
-                    row.get("synergy_final_score", row["synergy_bonus"]),
+                    row["synergy_bonus"],
                     "配合表现优于正常水平",
                     "配合表现低于正常水平",
                     "配合表现接近正常水平",
@@ -466,7 +541,7 @@ def build_explanation(row, ally, enemies):
         else:
             parts.append(
                 describe_bonus(
-                    row.get("counter_final_score", row["counter_bonus"]),
+                    row["counter_bonus"],
                     "对位表现优于正常水平",
                     "对位表现低于正常水平",
                     "对位表现接近正常水平",
@@ -522,7 +597,7 @@ def get_component_weights(state, has_ally, enemy_count):
     elif not has_ally and enemy_count > 0:
         weights = {"base": 0.40, "synergy": 0.0, "counter": 0.60}
     elif has_ally and enemy_count > 0:
-        weights = {"base": 0.30, "synergy": 0.35, "counter": 0.35}
+        weights = {"base": 0.20, "synergy": 0.40, "counter": 0.40}
     else:
         weights = {"base": 1.0, "synergy": 0.0, "counter": 0.0}
 
@@ -608,58 +683,6 @@ def adjusted_counter_score(counter, enemy_count):
     missing_count = max(0, enemy_count - counter["counter_data_count"])
     missing_penalty = MISSING_COUNTER_PENALTY * missing_count / enemy_count
     return counter["counter_bonus"] + missing_penalty
-
-
-def smooth_component_score(value, scale=30.0, limit=30.0):
-    return math.tanh(float(value or 0) / scale) * limit
-
-
-def relation_games_bonus(games, cap, reference_games):
-    games = max(0, float(games or 0))
-    if games <= 0:
-        return 0.0
-    return min(cap, math.log1p(games) / math.log1p(reference_games) * cap)
-
-
-def apply_relation_games_bonus(score, games, cap, reference_games):
-    score = float(score or 0)
-    if score < -3:
-        return score, 0.0
-    bonus = relation_games_bonus(games, cap, reference_games)
-    return score + bonus, bonus
-
-
-def precision_sort_score(row):
-    confidence_bonus = {
-        "high": 3.0,
-        "medium": 1.0,
-        "low": -2.0,
-        "very_low": -5.0,
-    }.get(row.get("confidence_level"), 0.0)
-    missing_penalty = len(row.get("missing_fields", [])) * 2.0
-    return row.get("final_rating", 0.0) + confidence_bonus - missing_penalty
-
-
-def is_precision_candidate(row, has_ally, has_enemies):
-    if row.get("confidence_level") == "very_low":
-        return False
-    if has_ally and row.get("synergy_final_score", row.get("synergy_adjusted_score", 0)) < -8:
-        return False
-    if has_enemies and row.get("counter_final_score", row.get("counter_adjusted_score", 0)) < -8:
-        return False
-    if len(row.get("missing_fields", [])) >= 2 and row.get("confidence_level") in ("low", "very_low"):
-        return False
-    return True
-
-
-def select_precise_results(results, bp_state):
-    has_ally = bool(bp_state.get("ally_ad") or bp_state.get("ally_sup"))
-    has_enemies = bool(bp_state.get("enemy_ad") or bp_state.get("enemy_sup"))
-    preferred = [row for row in results if is_precision_candidate(row, has_ally, has_enemies)]
-    fallback = [row for row in results if row not in preferred]
-    preferred.sort(key=precision_sort_score, reverse=True)
-    fallback.sort(key=precision_sort_score, reverse=True)
-    return (preferred + fallback)[:5]
 
 
 def normalize_time_stats(record):
@@ -863,51 +886,55 @@ def build_time_detail(db, role, candidate, ally, bp_state):
 
 
 def precision_confidence_bonus(level):
-    return {"high": 2.0, "medium": 1.0, "low": -1.0, "very_low": -3.0}.get(level, 0.0)
+    return {"high": 2.0, "medium": 1.0, "low": -2.0, "very_low": -4.0}.get(level, 0.0)
 
 
 def precision_tier_bonus(tier):
     if tier in ("S+", "S", "S-", "A+", "A", "A-"):
-        return 1.0
+        return 0.5
     if tier in ("C+", "C", "C-", "D+", "D", "D-"):
-        return -1.0
+        return -0.5
     return 0.0
 
 
 def build_precision_meta(db, role, bp_state, row, ally):
     data_bonus = 0.0
     if row.get("duo_games", 0) > 0:
-        data_bonus += 1.0
+        data_bonus += 0.5
     if row.get("matchup_games", 0) > 0:
-        data_bonus += 1.0
-    missing_penalty = len(row.get("missing_fields", [])) * 1.5
+        data_bonus += 0.5
+    missing_penalty = len(row.get("missing_fields", [])) * 2.0
+    relation_risk_penalty = 0.0
+    if ally and row.get("synergy_calibrated_score", row.get("synergy_adjusted_score", 0)) < -6:
+        relation_risk_penalty += 6.0
+    if (bp_state.get("enemy_ad") or bp_state.get("enemy_sup")) and row.get("counter_calibrated_score", row.get("counter_adjusted_score", 0)) < -6:
+        relation_risk_penalty += 6.0
     precision_score = (
-        row["display_winrate"]
+        row["final_rating"]
         + precision_confidence_bonus(row.get("confidence_level"))
         + data_bonus
         + precision_tier_bonus(row.get("tier"))
         - missing_penalty
+        - relation_risk_penalty
     )
 
     tags = []
     if row.get("confidence_level") in ("high", "medium") and not row.get("missing_fields"):
         tags.append("稳健首选")
-    if row.get("base_adjusted_score", row.get("base_rating", 0)) >= 12:
+    if row.get("base_rating", 0) >= 12:
         tags.append("版本强势")
-    if row.get("synergy_final_score", row.get("synergy_bonus", 0)) >= 8:
+    if row.get("synergy_bonus", 0) >= 8:
         tags.append("搭档适配")
-    if row.get("counter_final_score", row.get("counter_bonus", 0)) >= 8:
+    if row.get("counter_bonus", 0) >= 8:
         tags.append("对位优势")
-    if row.get("synergy_games_bonus", 0) >= 2.5:
-        tags.append("成熟组合")
-    if row.get("counter_games_bonus", 0) >= 2:
-        tags.append("对位样本足")
     if row["display_winrate"] >= 53 and row.get("confidence_level") in ("low", "very_low"):
         tags.append("高收益选择")
     if row.get("confidence_level") in ("low", "very_low"):
         tags.append("样本偏少")
     if row.get("missing_fields"):
         tags.append("数据不足")
+    if relation_risk_penalty > 0:
+        tags.append("关系风险")
     if not tags:
         tags.append("综合推荐")
 
@@ -929,6 +956,10 @@ def build_precision_meta(db, role, bp_state, row, ally):
         risks.append("样本量偏少，建议结合熟练度判断。")
     if row.get("missing_labels"):
         risks.append("、".join(row["missing_labels"]) + "。")
+    if ally and row.get("synergy_calibrated_score", row.get("synergy_adjusted_score", 0)) < -6:
+        risks.append("与当前己方搭档的历史配合分明显偏低。")
+    if (bp_state.get("enemy_ad") or bp_state.get("enemy_sup")) and row.get("counter_calibrated_score", row.get("counter_adjusted_score", 0)) < -6:
+        risks.append("面对当前敌方下路的历史对位分明显偏低。")
     if time_detail.get("available") is False:
         risks.append("当前缓存暂无时间段强势数据，更新数据后可显示曲线。")
     if not risks:
@@ -945,13 +976,13 @@ def build_precision_meta(db, role, bp_state, row, ally):
                 "recommend_index": row["display_winrate"],
                 "confidence_label": row.get("confidence_label"),
                 "base_rating": row.get("base_rating"),
-                "base_adjusted_score": row.get("base_adjusted_score"),
+                "base_calibrated_score": row.get("base_calibrated_score"),
                 "synergy_bonus": row.get("synergy_bonus"),
-                "synergy_final_score": row.get("synergy_final_score"),
-                "synergy_games_bonus": row.get("synergy_games_bonus"),
+                "synergy_calibrated_score": row.get("synergy_calibrated_score"),
+                "synergy_maturity_score": row.get("synergy_maturity_score"),
                 "counter_bonus": row.get("counter_bonus"),
-                "counter_final_score": row.get("counter_final_score"),
-                "counter_games_bonus": row.get("counter_games_bonus"),
+                "counter_calibrated_score": row.get("counter_calibrated_score"),
+                "counter_maturity_score": row.get("counter_maturity_score"),
                 "duo_games": row.get("duo_games"),
                 "matchup_games": row.get("matchup_games"),
             },
@@ -1012,17 +1043,13 @@ def run_recommend(role, bp_state, db, top_n=None):
         )
         synergy_adjusted = adjusted_synergy_score(synergy, bool(ally))
         counter_adjusted = adjusted_counter_score(counter, len(enemy_context))
-        base_adjusted = smooth_component_score(score["base_rating"])
-        synergy_final, synergy_games_bonus = apply_relation_games_bonus(
-            synergy_adjusted, synergy["duo_games"], 4.0, 8000
-        )
-        counter_final, counter_games_bonus = apply_relation_games_bonus(
-            counter_adjusted, counter["matchup_games"], 3.0, 5000
-        )
+        base_calibrated = calibrated_component_score(score["base_rating"])
+        synergy_calibrated = calibrated_component_score(synergy_adjusted)
+        counter_calibrated = calibrated_component_score(counter_adjusted)
         final_rating = (
-            component_weights["base"] * base_adjusted
-            + component_weights["synergy"] * synergy_final
-            + component_weights["counter"] * counter_final
+            component_weights["base"] * base_calibrated
+            + component_weights["synergy"] * synergy_calibrated
+            + component_weights["counter"] * counter_calibrated
         )
         row = {
             "name": name,
@@ -1031,7 +1058,7 @@ def run_recommend(role, bp_state, db, top_n=None):
             "base_winrate": round(score["base_winrate"] * 100, 2),
             "raw_base_rating": round(score["raw_base_rating"], 2),
             "base_rating": round(score["base_rating"], 2),
-            "base_adjusted_score": round(base_adjusted, 2),
+            "base_calibrated_score": round(base_calibrated, 2),
             "expectation_rating": round(score["expectation_rating"], 2),
             "tier_prior_rating": round(score["tier_prior_rating"], 2),
             "winrate_component": round(score["winrate_component"], 2),
@@ -1041,17 +1068,17 @@ def run_recommend(role, bp_state, db, top_n=None):
             "display_winrate": round(rating_to_winrate(final_rating) * 100, 2),
             "synergy_bonus": round(synergy["synergy_bonus"], 2),
             "synergy_adjusted_score": round(synergy_adjusted, 2),
-            "synergy_final_score": round(synergy_final, 2),
-            "synergy_games_bonus": round(synergy_games_bonus, 2),
+            "synergy_calibrated_score": round(synergy_calibrated, 2),
             "synergy_absolute_score": round(synergy["synergy_absolute_score"], 2),
             "synergy_residual_score": round(synergy["synergy_residual_score"], 2),
+            "synergy_maturity_score": round(synergy["synergy_maturity_score"], 2),
             "synergy_confidence": round(synergy["synergy_confidence"], 4),
             "counter_bonus": round(counter["counter_bonus"], 2),
             "counter_adjusted_score": round(counter_adjusted, 2),
-            "counter_final_score": round(counter_final, 2),
-            "counter_games_bonus": round(counter_games_bonus, 2),
+            "counter_calibrated_score": round(counter_calibrated, 2),
             "counter_absolute_score": round(counter["counter_absolute_score"], 2),
             "counter_residual_score": round(counter["counter_residual_score"], 2),
+            "counter_maturity_score": round(counter["counter_maturity_score"], 2),
             "counter_confidence": round(counter["counter_confidence"], 4),
             "duo_games": synergy["duo_games"],
             "matchup_games": counter["matchup_games"],
@@ -1091,17 +1118,18 @@ def run_recommend(role, bp_state, db, top_n=None):
         row.update(build_display_meta(row, ally, enemies, has_context=bool(ally or enemies)))
         row["explanation"] = build_explanation(row, ally, enemies)
         row.update(build_precision_meta(db, role, bp_state, row, ally))
-        row["precision_score"] = round(precision_sort_score(row), 2)
         # Legacy aliases keep existing clients usable while the UI migrates.
         row["final_score"] = row["display_winrate"]
-        row["counter_score"] = row["counter_final_score"]
-        row["synergy_score"] = row["synergy_final_score"]
-        row["base_score"] = row["base_adjusted_score"]
+        row["counter_score"] = row["counter_calibrated_score"]
+        row["synergy_score"] = row["synergy_calibrated_score"]
+        row["base_score"] = row["base_calibrated_score"]
         row["effective_weights"] = round_weights(component_weights)
         results.append(row)
 
     results.sort(key=lambda item: item["final_rating"], reverse=True)
-    precise_results = select_precise_results(results, bp_state)
+    precise_results = sorted(
+        results, key=lambda item: item.get("precision_score", item["final_rating"]), reverse=True
+    )[:5]
     if top_n is not None:
         results = results[:top_n]
 

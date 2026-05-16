@@ -46,6 +46,7 @@ def test_recommend(client):
     assert data["state"] == "S8"
     assert data["state_info"]["label"] == "下路信息完整"
     assert len(data["results"]) == 5
+    assert len(data["precise_results"]) == 7
     names = {row["name"] for row in data["results"]}
     assert not names.intersection({"lucian", "jinx", "leona"})
     first = data["results"][0]
@@ -62,6 +63,19 @@ def test_recommend(client):
         "explanation",
     ]:
         assert key in first, f"missing {key}"
+    precise = data["precise_results"][0]
+    for key in [
+        "precision_score",
+        "precision_tags",
+        "coach_summary",
+        "coach_playstyle",
+        "coach_risks",
+        "precision_detail",
+        "precision_tag_groups",
+    ]:
+        assert key in precise, f"missing precise {key}"
+    assert {"combo", "hero", "data"}.issubset(precise["precision_tag_groups"])
+    assert "timeline" in precise["precision_detail"]
 
 
 def test_side_features(client):

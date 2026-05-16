@@ -4,10 +4,12 @@
 bp_engine.py - 下路 BP 推荐核心
 
 这个模块不负责命令行打印，也不负责 Web 框架。
-它只接收 BP 状态和本地数据库，返回适合 CLI/API/小程序使用的结构化结果。
+它只接收 BP 状态和本地数据库，返回适合 CLI/API/Web 使用的结构化结果。
 """
 
 import math
+
+from champion_tags import CHAMPION_TAGS, COMBO_TAG_OVERRIDES
 
 VALID_ROLES = ("support", "adc")
 VALID_KEYS = ("ally_ad", "ally_sup", "enemy_ad", "enemy_sup")
@@ -897,6 +899,193 @@ def precision_tier_bonus(tier):
     return 0.0
 
 
+def append_unique(target, values, limit=None):
+    for value in values:
+        if value and value not in target:
+            target.append(value)
+            if limit and len(target) >= limit:
+                break
+    return target
+
+
+def get_champion_tags(champion):
+    return CHAMPION_TAGS.get(champion, [])
+
+
+def infer_combo_tags(candidate_tags, ally_tags, candidate=None, ally=None):
+    if candidate and ally:
+        override = COMBO_TAG_OVERRIDES.get(frozenset((candidate, ally)))
+        if override:
+            return list(override)
+
+    candidate_set = set(candidate_tags)
+    ally_set = set(ally_tags)
+    combo_tags = []
+
+    def has_any(tag_set, names):
+        return any(name in tag_set for name in names)
+
+    def paired(left_names, right_names):
+        return (
+            has_any(candidate_set, left_names) and has_any(ally_set, right_names)
+        ) or (
+            has_any(ally_set, left_names) and has_any(candidate_set, right_names)
+        )
+
+    if paired(
+        ("爆发换血", "爆发", "抢线"),
+        ("消耗", "强化普攻", "前中期", "抢线"),
+    ):
+        combo_tags.append("爆发换血")
+    if paired(
+        ("强开", "控制链", "团控", "先手机会", "开团"),
+        ("爆发", "all-in", "近身爆发", "收割"),
+    ):
+        combo_tags.append("all-in爆发")
+    if paired(
+        ("发育", "后期", "后期收割", "成长", "保护核心"),
+        ("保护", "强化核心", "续航", "容错", "反开"),
+    ):
+        combo_tags.append("发育保护")
+    if paired(
+        ("消耗", "远程消耗", "压血线", "推线"),
+        ("消耗", "远程消耗", "压血线", "推线", "控制衔接"),
+    ):
+        combo_tags.append("远程消耗")
+    if paired(
+        ("反开", "反打", "防突进"),
+        ("保护", "自保", "拉扯", "发育", "后期"),
+    ):
+        combo_tags.append("反打拉扯")
+    if paired(
+        ("抢线", "推线", "前期压制"),
+        ("控龙", "消耗", "远程消耗", "压血线", "开视野"),
+    ):
+        combo_tags.append("抢线控龙")
+    return combo_tags
+
+
+def build_data_tags(row, relation_risk_penalty):
+    tags = []
+    if row.get("confidence_level") in ("high", "medium") and not row.get("missing_fields"):
+        tags.append("样本较稳")
+    if row.get("base_rating", 0) >= 12:
+        tags.append("版本强势")
+    if row.get("synergy_bonus", 0) >= 8:
+        tags.append("搭档适配")
+    if row.get("counter_bonus", 0) >= 8:
+        tags.append("对位优势")
+    if row["display_winrate"] >= 53 and row.get("confidence_level") in ("low", "very_low"):
+        tags.append("高收益")
+    if row.get("confidence_level") in ("low", "very_low"):
+        tags.append("样本谨慎")
+    if row.get("missing_fields"):
+        tags.append("数据不足")
+    if relation_risk_penalty > 0:
+        tags.append("关系风险")
+    if not tags:
+        tags.append("综合推荐")
+    return tags
+
+
+def select_card_tags(data_tags, combo_tags, hero_tags, time_detail):
+    tags = []
+    append_unique(tags, data_tags, limit=2)
+    append_unique(tags, combo_tags, limit=4)
+    append_unique(tags, hero_tags, limit=4)
+    if time_detail.get("primary"):
+        append_unique(tags, [time_detail["primary"]["summary"]], limit=4)
+    return tags[:4] or ["综合推荐"]
+
+
+def build_precision_tag_groups(data_tags, combo_tags, hero_tags, time_detail):
+    combo_display = []
+    append_unique(combo_display, combo_tags, limit=3)
+    if time_detail.get("primary"):
+        append_unique(combo_display, [time_detail["primary"]["summary"]], limit=3)
+
+    hero_display = []
+    append_unique(hero_display, hero_tags, limit=3)
+
+    data_display = []
+    append_unique(data_display, data_tags, limit=3)
+
+    return {
+        "combo": combo_display,
+        "hero": hero_display,
+        "data": data_display,
+    }
+
+
+def build_coach_summary(row, data_tags, combo_tags, hero_tags, time_detail):
+    tags = set(data_tags + combo_tags + hero_tags)
+    if "all-in爆发" in tags or "控制进场" in tags or "前期击杀" in tags:
+        return "适合主动找机会，配合控制链打击杀。"
+    if "击杀压制" in tags or "高风险滚雪球" in tags:
+        return "适合前期打击杀滚雪球，但容错会更低。"
+    if "爆发换血" in tags or "先手爆发" in tags or "强化换血" in tags:
+        return "适合围绕当前搭档打前中期换血。"
+    if "发育保护" in tags or "保护核心" in tags or "保护发育" in tags:
+        return "适合稳住对线，把重心放到中后期团战。"
+    if "推线消耗" in tags or "抢线压制" in tags or "远程消耗" in tags:
+        return "适合用推线和消耗建立下路主动权。"
+    if "反打拉扯" in tags or "反打保护" in tags or "反打换血" in tags:
+        return "适合稳住站位，等对手先手后反打。"
+    if "对位优势" in tags:
+        return "面对当前敌方下路有更好的对位价值。"
+    if "搭档适配" in tags:
+        return "和当前搭档适配度较高，适合优先考虑。"
+    if "消耗" in tags or "压血线" in tags:
+        return "适合用手长和消耗建立线权。"
+    if "强开" in tags or "all-in爆发" in tags or "先手机会" in tags:
+        return "适合主动找机会，配合打野打击杀。"
+    if time_detail.get("primary") and "前" in time_detail["primary"]["summary"]:
+        return "强势期偏前中期，适合尽早争线权。"
+    if time_detail.get("primary") and "后" in time_detail["primary"]["summary"]:
+        return "强势期偏中后期，适合稳住发育。"
+    if "版本强势" in tags or "样本较稳" in tags:
+        return "版本表现和数据稳定性较好，适合直接选。"
+    if "高收益" in tags:
+        return "模型收益较高，但需要结合熟练度判断。"
+    return "综合表现靠前，适合作为本局候选。"
+
+
+def build_coach_playstyle(row, data_tags, combo_tags, hero_tags, time_detail):
+    tags = set(data_tags + combo_tags + hero_tags)
+    parts = []
+    if "抢线控龙" in tags or "抢线" in tags or "推线" in tags:
+        parts.append("前期优先处理兵线，争取下河道和小龙前视野。")
+    if "爆发换血" in tags or "all-in爆发" in tags or "强开" in tags:
+        parts.append("找到等级或技能窗口后可以主动换血，配合打野扩大击杀压力。")
+    if "远程消耗" in tags or "消耗" in tags or "压血线" in tags:
+        parts.append("用射程和技能消耗压低血线，不急着硬拼。")
+    if "发育保护" in tags or "保护" in tags or "强化核心" in tags:
+        parts.append("重点保护核心输出，前期少给机会，中后期围绕团战站位。")
+    if "游走" in tags:
+        parts.append("线权出来后可以带动中野节奏，但要避免让 ADC 长时间独自抗压。")
+    if time_detail.get("primary"):
+        parts.append(f"时间线判断为{time_detail['primary']['summary']}，发力节奏可以围绕这个阶段安排。")
+    if not parts:
+        parts.append("打法上以稳住对线、根据打野位置决定进退为主。")
+    return "".join(parts)
+
+
+def build_coach_risks(row, base_risks, hero_tags):
+    risks = list(base_risks)
+    tags = set(hero_tags)
+    if "高风险" in tags:
+        risks.append("英雄容错偏低，熟练度不足时不建议只看模型分数。")
+    if "技能命中" in tags:
+        risks.append("强度比较依赖关键技能命中率，空技能后对线压力会明显下降。")
+    if "游走" in tags:
+        risks.append("游走收益需要线权支撑，否则容易让下路亏线。")
+    if "后期" in tags or "发育" in tags:
+        risks.append("前期需要避免无意义硬拼，过早崩线会影响后期价值。")
+    if row.get("confidence_level") in ("low", "very_low"):
+        risks.append("样本量偏少，更适合熟练玩家作为参考。")
+    return append_unique([], risks)
+
+
 def build_precision_meta(db, role, bp_state, row, ally):
     data_bonus = 0.0
     if row.get("duo_games", 0) > 0:
@@ -918,29 +1107,13 @@ def build_precision_meta(db, role, bp_state, row, ally):
         - relation_risk_penalty
     )
 
-    tags = []
-    if row.get("confidence_level") in ("high", "medium") and not row.get("missing_fields"):
-        tags.append("稳健首选")
-    if row.get("base_rating", 0) >= 12:
-        tags.append("版本强势")
-    if row.get("synergy_bonus", 0) >= 8:
-        tags.append("搭档适配")
-    if row.get("counter_bonus", 0) >= 8:
-        tags.append("对位优势")
-    if row["display_winrate"] >= 53 and row.get("confidence_level") in ("low", "very_low"):
-        tags.append("高收益选择")
-    if row.get("confidence_level") in ("low", "very_low"):
-        tags.append("样本偏少")
-    if row.get("missing_fields"):
-        tags.append("数据不足")
-    if relation_risk_penalty > 0:
-        tags.append("关系风险")
-    if not tags:
-        tags.append("综合推荐")
-
     time_detail = build_time_detail(db, role, row["name"], ally, bp_state)
-    if time_detail.get("primary"):
-        tags.append(time_detail["primary"]["summary"])
+    hero_tags = get_champion_tags(row["name"])
+    ally_tags = get_champion_tags(ally) if ally else []
+    combo_tags = infer_combo_tags(hero_tags, ally_tags, row["name"], ally) if ally else []
+    data_tags = build_data_tags(row, relation_risk_penalty)
+    tags = select_card_tags(data_tags, combo_tags, hero_tags, time_detail)
+    tag_groups = build_precision_tag_groups(data_tags, combo_tags, hero_tags, time_detail)
 
     reasons = [row.get("explanation", "").rstrip("。")]
     if row.get("synergy_residual_score", 0) >= 5:
@@ -964,13 +1137,24 @@ def build_precision_meta(db, role, bp_state, row, ally):
         risks.append("当前缓存暂无时间段强势数据，更新数据后可显示曲线。")
     if not risks:
         risks.append("暂无明显数据风险，仍需结合阵容和熟练度。")
+    coach_summary = build_coach_summary(row, data_tags, combo_tags, hero_tags, time_detail)
+    coach_playstyle = build_coach_playstyle(row, data_tags, combo_tags, hero_tags, time_detail)
+    coach_risks = build_coach_risks(row, risks, hero_tags)
 
     return {
         "precision_score": round(precision_score, 2),
-        "precision_tags": tags[:4],
+        "precision_tags": tags,
         "precision_reason": reason,
+        "coach_summary": coach_summary,
+        "coach_playstyle": coach_playstyle,
+        "coach_risks": coach_risks,
+        "hero_tags": hero_tags,
+        "combo_tags": combo_tags,
+        "data_tags": data_tags,
+        "precision_tag_groups": tag_groups,
         "precision_detail": {
-            "conclusion": reason,
+            "conclusion": coach_summary,
+            "coach_playstyle": coach_playstyle,
             "timeline": time_detail,
             "data": {
                 "recommend_index": row["display_winrate"],
@@ -986,7 +1170,7 @@ def build_precision_meta(db, role, bp_state, row, ally):
                 "duo_games": row.get("duo_games"),
                 "matchup_games": row.get("matchup_games"),
             },
-            "risks": risks,
+            "risks": coach_risks,
         },
     }
 
@@ -1129,7 +1313,7 @@ def run_recommend(role, bp_state, db, top_n=None):
     results.sort(key=lambda item: item["final_rating"], reverse=True)
     precise_results = sorted(
         results, key=lambda item: item.get("precision_score", item["final_rating"]), reverse=True
-    )[:5]
+    )[:7]
     if top_n is not None:
         results = results[:top_n]
 

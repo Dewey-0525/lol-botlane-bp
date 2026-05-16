@@ -247,11 +247,51 @@
       box-shadow: 0 8px 20px rgba(23, 32, 51, 0.08);
     }
     .precise-card .champ { margin-bottom: 8px; }
+    .precise-scores {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+      margin: 9px 0;
+    }
+    .precise-score {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fbfcfe;
+      padding: 6px;
+    }
+    .precise-score span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .precise-score strong {
+      display: block;
+      margin-top: 2px;
+      color: var(--text);
+      font-size: 14px;
+    }
     .tag-row {
       display: flex;
       flex-wrap: wrap;
       gap: 5px;
       margin: 8px 0;
+    }
+    .tag-group {
+      display: grid;
+      gap: 5px;
+      margin: 8px 0;
+    }
+    .tag-line {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      align-items: center;
+    }
+    .tag-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
     }
     .tag {
       border-radius: 999px;
@@ -639,7 +679,7 @@
     </section>
 
     <section class="precise-panel" id="precise_panel">
-      <h2 class="section-title">精确推荐 TOP 5</h2>
+      <h2 class="section-title">精准推荐 7 选</h2>
       <div class="precise-grid" id="precise_cards"></div>
     </section>
 
@@ -729,7 +769,7 @@
   <section class="modal" id="precision_modal" aria-hidden="true">
     <div class="modal-card">
       <div class="modal-head">
-        <h2 id="precision_title">精确推荐详情</h2>
+        <h2 id="precision_title">精准推荐详情</h2>
         <button class="secondary" id="close_precision" type="button">关闭</button>
       </div>
       <div class="detail-grid">
@@ -739,17 +779,21 @@
           <div class="tag-row" id="precision_tags"></div>
         </section>
         <section class="detail-block">
+          <h3>适合打法</h3>
+          <p id="precision_playstyle">-</p>
+        </section>
+        <section class="detail-block">
           <h3>强势时间线<span class="help-tip" tabindex="0" data-tip="这里展示的是强势偏移趋势，不是组合真实分时胜率。强势偏移 = 英雄该时间段表现 - 英雄自身整体平均表现；下路趋势由 ADC 与辅助各自强势偏移加总推算。蓝线是我方当前推荐，红线是敌方已知选择；敌方只露出一个英雄时，红线仅代表该英雄。">?</span></h3>
           <div id="timeline_chart"></div>
           <p id="timeline_note">-</p>
         </section>
         <section class="detail-block">
-          <h3>数据依据</h3>
-          <p id="precision_data">-</p>
+          <h3>注意事项</h3>
+          <p id="precision_risks">-</p>
         </section>
         <section class="detail-block">
-          <h3>风险提示</h3>
-          <p id="precision_risks">-</p>
+          <h3>数据依据</h3>
+          <p id="precision_data">-</p>
         </section>
       </div>
     </div>
@@ -1016,15 +1060,30 @@
         const card = document.createElement("button");
         card.className = "precise-card";
         card.type = "button";
-        const tags = (row.precision_tags || []).map((tag) => `<span class="tag">${tag}</span>`).join("");
+        const groups = row.precision_tag_groups || {};
+        const comboTags = groups.combo || row.combo_tags || [];
+        const heroTags = groups.hero || row.hero_tags || [];
+        const dataTags = groups.data || row.data_tags || row.precision_tags || [];
+        const tagLine = (label, tags) => tags && tags.length
+          ? `<div class="tag-line"><span class="tag-label">${label}</span>${tags.map((tag) => `<span class="tag">${tag}</span>`).join("")}</div>`
+          : "";
         card.innerHTML = `
           <div class="champ">
             <img src="${row.avatar}" alt="">
             <span>${index + 1}. ${row.display_name}<small>${row.english_name}</small></span>
           </div>
           <div><span class="badge">${row.tier}</span> 推荐指数 ${row.display_winrate.toFixed(1)}</div>
-          <div class="tag-row">${tags}</div>
-          <div class="card-reason">${row.precision_reason || row.explanation || "-"}</div>
+          <div class="precise-scores">
+            <div class="precise-score"><span>基础</span><strong>${rating(row.base_calibrated_score ?? row.base_rating)}</strong></div>
+            <div class="precise-score"><span>配合</span><strong>${rating(row.synergy_calibrated_score ?? row.synergy_bonus)}</strong></div>
+            <div class="precise-score"><span>对位</span><strong>${rating(row.counter_calibrated_score ?? row.counter_bonus)}</strong></div>
+          </div>
+          <div class="tag-group">
+            ${tagLine("打法", comboTags)}
+            ${tagLine("英雄", heroTags)}
+            ${tagLine("数据", dataTags)}
+          </div>
+          <div class="card-reason">${row.coach_summary || row.precision_reason || row.explanation || "-"}</div>
         `;
         card.addEventListener("click", () => openPrecisionDetail(row));
         preciseCards.appendChild(card);
@@ -1076,13 +1135,14 @@
     function openPrecisionDetail(row) {
       const detail = row.precision_detail || {};
       document.querySelector("#precision_title").textContent = `${row.display_name} ${row.english_name}`;
-      document.querySelector("#precision_conclusion").textContent = detail.conclusion || row.explanation || "-";
+      document.querySelector("#precision_conclusion").textContent = detail.conclusion || row.coach_summary || row.explanation || "-";
       document.querySelector("#precision_tags").innerHTML = (row.precision_tags || [])
         .map((tag) => `<span class="tag">${tag}</span>`).join("");
+      document.querySelector("#precision_playstyle").textContent = detail.coach_playstyle || row.coach_playstyle || "-";
       const data = detail.data || {};
       document.querySelector("#precision_data").textContent =
-        `推荐指数 ${data.recommend_index ?? "-"}；可信度 ${data.confidence_label ?? "-"}；基础 ${data.base_calibrated_score ?? "-"}（原始 ${data.base_rating ?? "-"}）；配合 ${data.synergy_calibrated_score ?? "-"}（原始 ${data.synergy_bonus ?? "-"}，成熟度 ${data.synergy_maturity_score ?? "-"}）；对位 ${data.counter_calibrated_score ?? "-"}（原始 ${data.counter_bonus ?? "-"}，成熟度 ${data.counter_maturity_score ?? "-"}）；配合场次 ${data.duo_games ?? 0}；对位场次 ${data.matchup_games ?? 0}。时间线为英雄单位置时间段强势偏移加总推算，不代表真实双人组分时胜率。`;
-      document.querySelector("#precision_risks").innerHTML = (detail.risks || ["暂无明显数据风险。"]).join("<br>");
+        `推荐指数 ${data.recommend_index ?? "-"}；可信度 ${data.confidence_label ?? "-"}；基础 ${data.base_calibrated_score ?? "-"}（原始 ${data.base_rating ?? "-"}）；配合 ${data.synergy_calibrated_score ?? "-"}（原始 ${data.synergy_bonus ?? "-"}，成熟度 ${data.synergy_maturity_score ?? "-"}）；对位 ${data.counter_calibrated_score ?? "-"}（原始 ${data.counter_bonus ?? "-"}，成熟度 ${data.counter_maturity_score ?? "-"}）；配合场次 ${data.duo_games ?? 0}；对位场次 ${data.matchup_games ?? 0}。`;
+      document.querySelector("#precision_risks").innerHTML = (detail.risks || row.coach_risks || ["暂无明显数据风险。"]).join("<br>");
       renderTimeline(detail.timeline || {});
       precisionModal.classList.add("active");
       precisionModal.setAttribute("aria-hidden", "false");
@@ -1182,7 +1242,7 @@
       });
       const data = await res.json();
       latestRows = data.results || [];
-      latestPreciseRows = data.precise_results || latestRows.slice(0, 5);
+      latestPreciseRows = data.precise_results || latestRows.slice(0, 7);
       metrics.state.textContent = data.state_info?.label || data.state || "-";
       metrics.stateDesc.textContent = data.state_info?.description || "-";
       metrics.total.textContent = String(data.summary?.total ?? latestRows.length);

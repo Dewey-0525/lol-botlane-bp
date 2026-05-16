@@ -19,7 +19,7 @@ LoL 下路 BP 智能推荐助手
   推荐算法核心。负责 BP 状态推导、动态权重、缺失数据处理、可信度和依据字段。
 
 - `app.py`
-  Flask API 服务。微信小程序未来可以通过这些接口调用推荐结果。
+  Flask API 服务。网页版通过这些接口调用推荐结果。
 
 - `wsgi.py`
   生产环境 WSGI 入口，可配合 Gunicorn/Nginx 部署。
@@ -42,11 +42,8 @@ LoL 下路 BP 智能推荐助手
 - `test_api.py`
   基础 API 回归测试。
 
-- `miniapp_plan.md`
-  微信小程序迁移规划。
-
 - `deployment_plan.md`
-  后端部署规划。
+  网页版部署规划。
 
 
 安装依赖
@@ -354,6 +351,6 @@ OK: API smoke tests passed
 建议下一步：
 
 1. 继续补全 `champion_aliases.py` 中的玩家常用别名。
-2. 参考 `miniapp_plan.md` 将当前 Web 原型迁移为微信小程序页面。
-3. 参考 `deployment_plan.md` 部署 Flask API 到可被小程序访问的后端服务。
-4. 增加数据更新时间展示和一键刷新数据流程。
+2. 继续优化推荐解释、移动端显示和朋友试用反馈。
+3. 参考 `deployment_plan.md` 维护网页版部署。
+4. 增加更方便的数据更新和部署观察流程。

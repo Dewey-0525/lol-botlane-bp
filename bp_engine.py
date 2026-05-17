@@ -1444,4 +1444,6 @@ def find_counter_picks(enemy, role, db, top_n=5):
         )
 
     results.sort(key=lambda item: item["counter_index"], reverse=True)
+    if top_n is None:
+        return results
     return results[:top_n]

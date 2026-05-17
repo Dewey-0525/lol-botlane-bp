@@ -18,6 +18,12 @@ import os
 
 from flask import Flask, jsonify, render_template, request
 
+try:
+    from pypinyin import Style, lazy_pinyin
+except ImportError:
+    Style = None
+    lazy_pinyin = None
+
 from bp_engine import (
     VALID_KEYS,
     extract_stat,
@@ -35,6 +41,66 @@ CN_NAMES_PATH = os.path.join(BASE_DIR, "scraper", "chinese_getchampion", "英雄
 app = Flask(__name__)
 DB = None
 CHAMPION_META = None
+
+
+def has_chinese(text):
+    return any("\u4e00" <= char <= "\u9fff" for char in text)
+
+
+def token_value(value, token_type, label=None):
+    value = str(value).strip().lower()
+    if not value:
+        return None
+    return {
+        "value": value,
+        "compact": "".join(value.split()),
+        "type": token_type,
+        "label": label or value,
+    }
+
+
+def add_token(tokens, seen, value, token_type, label=None):
+    token = token_value(value, token_type, label)
+    if not token:
+        return
+    key = (token["value"], token["type"])
+    if key in seen:
+        return
+    seen.add(key)
+    tokens.append(token)
+
+
+def pinyin_tokens(text):
+    if not lazy_pinyin or not Style or not has_chinese(text):
+        return []
+    syllables = [item for item in lazy_pinyin(text, errors="ignore") if item]
+    initials = [
+        item for item in lazy_pinyin(text, style=Style.FIRST_LETTER, errors="ignore") if item
+    ]
+    if not syllables:
+        return []
+    values = [
+        ("".join(syllables), "pinyin", text),
+        (" ".join(syllables), "pinyin", text),
+    ]
+    if initials:
+        values.append(("".join(initials), "initials", text))
+    return values
+
+
+def build_search_tokens(cn_name, key, champion_id, aliases):
+    tokens = []
+    seen = set()
+    add_token(tokens, seen, cn_name, "cn_name", cn_name)
+    add_token(tokens, seen, key, "id", key)
+    add_token(tokens, seen, key.title(), "english", key.title())
+    add_token(tokens, seen, champion_id, "champion_id", str(champion_id))
+    for alias in aliases:
+        add_token(tokens, seen, alias, "alias", alias)
+    for source in [cn_name, *aliases]:
+        for value, token_type, label in pinyin_tokens(source):
+            add_token(tokens, seen, value, token_type, label)
+    return tokens
 
 
 def load_db():
@@ -62,9 +128,8 @@ def load_champion_meta():
     meta = {}
     for (key, champion_id), cn_name in zip(HERO_ID_MAPPING.items(), cn_names):
         aliases = CHAMPION_ALIASES.get(key, [])
-        search_text = " ".join(
-            [cn_name, key, key.title(), str(champion_id), *aliases]
-        ).lower()
+        search_tokens = build_search_tokens(cn_name, key, champion_id, aliases)
+        search_text = " ".join(token["value"] for token in search_tokens).lower()
         meta[key] = {
             "id": key,
             "name": key.title(),
@@ -72,6 +137,7 @@ def load_champion_meta():
             "aliases": aliases,
             "champion_id": champion_id,
             "avatar": f"/static/avatars/{champion_id}.png",
+            "search_tokens": search_tokens,
             "search_text": search_text,
         }
     return meta
@@ -94,6 +160,7 @@ def enrich_champion(champion_id, fallback_tier=None):
         "champion_id": meta.get("champion_id"),
         "tier": fallback_tier,
         "avatar": meta.get("avatar", f"/static/avatars/{champion_id}.png"),
+        "search_tokens": meta.get("search_tokens", []),
         "search_text": meta.get("search_text", champion_id),
     }
 
@@ -169,6 +236,8 @@ def api_error(message, status_code=400, **extra):
 def normalize_top_n(value, default=10, minimum=1, maximum=50):
     if value is None:
         return default
+    if str(value).strip().lower() == "all":
+        return None
     try:
         top_n = int(value)
     except (TypeError, ValueError):

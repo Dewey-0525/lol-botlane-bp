@@ -155,7 +155,7 @@
       text-align: left;
     }
     .suggestion:last-child { border-bottom: 0; }
-    .suggestion:hover { background: var(--accent-soft); }
+    .suggestion:hover, .suggestion.active { background: var(--accent-soft); }
     .suggestion img {
       width: 28px;
       height: 28px;
@@ -346,9 +346,31 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 14px;
     }
+    .counter-scroll {
+      max-height: 560px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+    .counter-scroll table {
+      border: 0;
+      border-radius: 0;
+    }
+    .counter-scroll thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
     .section-title {
       margin: 4px 0 10px;
       font-size: 16px;
+    }
+    .result-count {
+      margin-left: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
     }
     .metric {
       border: 1px solid var(--line);
@@ -512,6 +534,11 @@
       box-shadow: 0 24px 60px rgba(23, 32, 51, 0.28);
       padding: 16px;
     }
+    #precision_modal .modal-card {
+      width: min(780px, 100%);
+      padding: 0;
+      overflow: hidden;
+    }
     .modal-head {
       display: flex;
       justify-content: space-between;
@@ -543,9 +570,220 @@
       font-size: 13px;
       line-height: 1.55;
     }
+    .precision-shell {
+      max-height: 92vh;
+      overflow: auto;
+      background: var(--panel);
+    }
+    .precision-hero {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+      padding: 14px 16px;
+    }
+    .precision-identity {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+    .precision-identity img {
+      width: 48px;
+      height: 48px;
+      border-radius: 8px;
+      background: #dbe1ea;
+      object-fit: cover;
+    }
+    .precision-identity h2 {
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.2;
+    }
+    .precision-identity p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .precision-hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .precision-index {
+      min-width: 82px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--accent-soft);
+      padding: 6px 8px;
+      text-align: center;
+    }
+    .precision-index span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .precision-index strong {
+      display: block;
+      margin-top: 2px;
+      color: var(--accent);
+      font-size: 21px;
+      line-height: 1;
+    }
+    .precision-layout {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+      padding: 12px;
+    }
+    .precision-column {
+      display: grid;
+      gap: 12px;
+      align-content: start;
+    }
+    .coach-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 11px 12px;
+    }
+    .coach-card.primary {
+      border-color: #b7cdf7;
+      background: #f7fbff;
+    }
+    .coach-card h3 {
+      margin: 0 0 7px;
+      font-size: 14px;
+    }
+    .coach-card p {
+      margin: 6px 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .coach-card .lead {
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 900;
+      line-height: 1.45;
+    }
+    .playstyle-list {
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .playstyle-list li {
+      display: flex;
+      gap: 8px;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 750;
+      line-height: 1.5;
+    }
+    .playstyle-list li::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      margin-top: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex: 0 0 auto;
+    }
+    .score-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 7px;
+    }
+    .score-tile {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+      padding: 8px;
+    }
+    .score-tile span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .score-tile strong {
+      display: block;
+      margin-top: 4px;
+      color: var(--text);
+      font-size: 18px;
+      line-height: 1;
+    }
+    .compact-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 10px;
+    }
+    .score-tile small {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.35;
+    }
+    .phase-strip {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 6px;
+      margin-top: 7px;
+    }
+    .phase-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+      padding: 6px;
+      text-align: center;
+    }
+    .phase-card strong {
+      display: block;
+      color: var(--text);
+      font-size: 12px;
+    }
+    .phase-card span {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .phase-card.strong span { color: var(--good); }
+    .phase-card.weak span { color: var(--low); }
+    .risk-list {
+      display: grid;
+      gap: 8px;
+    }
+    .risk-item {
+      border-left: 3px solid #98a2b3;
+      background: #f8fafc;
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 750;
+      line-height: 1.45;
+      padding: 8px 10px;
+    }
+    .risk-item.ok {
+      border-left-color: var(--good);
+    }
+    .evidence-note {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+      margin-top: 8px;
+    }
     .timeline-chart {
       width: 100%;
-      height: 210px;
+      height: 128px;
     }
     .timeline-axis {
       stroke: #d0d5dd;
@@ -574,7 +812,7 @@
       gap: 12px;
       color: var(--muted);
       font-size: 12px;
-      margin-top: 4px;
+      margin-top: 2px;
     }
     .legend-item::before {
       content: "";
@@ -591,11 +829,16 @@
     @media (max-width: 920px) {
       .topbar { align-items: flex-start; flex-direction: column; }
       .bp-grid, .summary, .precise-grid, .detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .precision-layout, .compact-row { grid-template-columns: 1fr; }
       .query-grid, .split { grid-template-columns: 1fr; }
       table { display: block; overflow-x: auto; }
     }
     @media (max-width: 560px) {
       .bp-grid, .summary, .precise-grid, .detail-grid { grid-template-columns: 1fr; }
+      .precision-hero { align-items: stretch; flex-direction: column; }
+      .precision-hero-actions { justify-content: space-between; }
+      .score-grid { grid-template-columns: 1fr; }
+      .phase-strip { grid-template-columns: repeat(5, minmax(54px, 1fr)); overflow-x: auto; }
       .actions { align-items: stretch; flex-direction: column; }
     }
   </style>
@@ -710,6 +953,12 @@
           <div class="suggestions" id="synergy_champion_suggestions"></div>
         </label>
         <button class="primary" id="query_synergy" type="button">查询协同</button>
+        <label>排序方式
+          <select id="synergy_sort">
+            <option value="win_rate">按胜率最高</option>
+            <option value="games">按组合场次最多</option>
+          </select>
+        </label>
       </section>
       <h2 class="section-title">最佳搭档</h2>
       <table>
@@ -728,18 +977,22 @@
       </section>
       <section class="split">
         <div>
-          <h2 class="section-title">推荐 ADC</h2>
-          <table>
-            <thead><tr><th>排名</th><th>英雄</th><th>梯队</th><th>我方胜率</th><th>场次</th><th>可信度</th><th>数据说明<span class="help-tip" tabindex="0" data-tip="双向数据会同时参考两边：正向看候选英雄打敌方英雄的胜率，反向看敌方英雄打候选英雄的胜率并换算成我方胜率。两边不是同一批统计样本，所以正向不一定严格等于 100 - 反向。双向数据一致：两边差距 ≤2%；双向数据基本一致：差距 2%-5%；双向数据分歧较大：差距 >5%；单向数据参考：只有一边有足够样本。">?</span></th></tr></thead>
-            <tbody id="counter_adc_results"></tbody>
-          </table>
+          <h2 class="section-title">推荐 ADC<span class="result-count" id="counter_adc_count">0 条</span></h2>
+          <div class="counter-scroll">
+            <table>
+              <thead><tr><th>排名</th><th>英雄</th><th>梯队</th><th>我方胜率</th><th>场次</th><th>可信度</th><th>数据说明<span class="help-tip" tabindex="0" data-tip="双向数据会同时参考两边：正向看候选英雄打敌方英雄的胜率，反向看敌方英雄打候选英雄的胜率并换算成我方胜率。两边不是同一批统计样本，所以正向不一定严格等于 100 - 反向。双向数据一致：两边差距 ≤2%；双向数据基本一致：差距 2%-5%；双向数据分歧较大：差距 >5%；单向数据参考：只有一边有足够样本。">?</span></th></tr></thead>
+              <tbody id="counter_adc_results"></tbody>
+            </table>
+          </div>
         </div>
         <div>
-          <h2 class="section-title">推荐辅助</h2>
-          <table>
-            <thead><tr><th>排名</th><th>英雄</th><th>梯队</th><th>我方胜率</th><th>场次</th><th>可信度</th><th>数据说明<span class="help-tip" tabindex="0" data-tip="双向数据会同时参考两边：正向看候选英雄打敌方英雄的胜率，反向看敌方英雄打候选英雄的胜率并换算成我方胜率。两边不是同一批统计样本，所以正向不一定严格等于 100 - 反向。双向数据一致：两边差距 ≤2%；双向数据基本一致：差距 2%-5%；双向数据分歧较大：差距 >5%；单向数据参考：只有一边有足够样本。">?</span></th></tr></thead>
-            <tbody id="counter_support_results"></tbody>
-          </table>
+          <h2 class="section-title">推荐辅助<span class="result-count" id="counter_support_count">0 条</span></h2>
+          <div class="counter-scroll">
+            <table>
+              <thead><tr><th>排名</th><th>英雄</th><th>梯队</th><th>我方胜率</th><th>场次</th><th>可信度</th><th>数据说明<span class="help-tip" tabindex="0" data-tip="双向数据会同时参考两边：正向看候选英雄打敌方英雄的胜率，反向看敌方英雄打候选英雄的胜率并换算成我方胜率。两边不是同一批统计样本，所以正向不一定严格等于 100 - 反向。双向数据一致：两边差距 ≤2%；双向数据基本一致：差距 2%-5%；双向数据分歧较大：差距 >5%；单向数据参考：只有一边有足够样本。">?</span></th></tr></thead>
+              <tbody id="counter_support_results"></tbody>
+            </table>
+          </div>
         </div>
       </section>
     </section>
@@ -768,33 +1021,62 @@
 
   <section class="modal" id="precision_modal" aria-hidden="true">
     <div class="modal-card">
-      <div class="modal-head">
-        <h2 id="precision_title">精准推荐详情</h2>
-        <button class="secondary" id="close_precision" type="button">关闭</button>
-      </div>
-      <div class="detail-grid">
-        <section class="detail-block">
-          <h3>推荐结论</h3>
-          <p id="precision_conclusion">-</p>
-          <div class="tag-row" id="precision_tags"></div>
-        </section>
-        <section class="detail-block">
-          <h3>适合打法</h3>
-          <p id="precision_playstyle">-</p>
-        </section>
-        <section class="detail-block">
-          <h3>强势时间线<span class="help-tip" tabindex="0" data-tip="这里展示的是强势偏移趋势，不是组合真实分时胜率。强势偏移 = 英雄该时间段表现 - 英雄自身整体平均表现；下路趋势由 ADC 与辅助各自强势偏移加总推算。蓝线是我方当前推荐，红线是敌方已知选择；敌方只露出一个英雄时，红线仅代表该英雄。">?</span></h3>
-          <div id="timeline_chart"></div>
-          <p id="timeline_note">-</p>
-        </section>
-        <section class="detail-block">
-          <h3>注意事项</h3>
-          <p id="precision_risks">-</p>
-        </section>
-        <section class="detail-block">
-          <h3>数据依据</h3>
-          <p id="precision_data">-</p>
-        </section>
+      <div class="precision-shell">
+        <div class="precision-hero">
+          <div class="precision-identity">
+            <img id="precision_avatar" src="" alt="">
+            <div>
+              <h2 id="precision_title">精准推荐详情</h2>
+              <p id="precision_subtitle">-</p>
+            </div>
+          </div>
+          <div class="precision-hero-actions">
+            <div class="precision-index">
+              <span>推荐指数</span>
+              <strong id="precision_index">-</strong>
+            </div>
+            <button class="secondary" id="close_precision" type="button">关闭</button>
+          </div>
+        </div>
+
+        <div class="precision-layout">
+          <section class="coach-card primary">
+            <h3>30 秒结论</h3>
+            <p class="lead" id="precision_conclusion">-</p>
+            <div class="tag-group" id="precision_tags"></div>
+          </section>
+
+          <section class="coach-card">
+            <h3>核心依据</h3>
+            <div class="score-grid" id="precision_scores"></div>
+            <p class="evidence-note" id="precision_score_note">分数用于比较候选英雄，不等于真实胜率。</p>
+          </section>
+
+          <div class="compact-row">
+            <section class="coach-card">
+              <h3>这把怎么打</h3>
+              <ul class="playstyle-list" id="precision_playstyle"></ul>
+            </section>
+
+            <section class="coach-card">
+              <h3>数据支撑</h3>
+              <div class="score-grid" id="precision_data"></div>
+              <p class="evidence-note">场次越高，推荐越有样本支撑。</p>
+            </section>
+          </div>
+
+          <section class="coach-card" id="precision_risk_card">
+            <h3>注意事项</h3>
+            <div class="risk-list" id="precision_risks"></div>
+          </section>
+
+          <section class="coach-card">
+            <h3>强势阶段</h3>
+            <div id="timeline_chart"></div>
+            <div class="phase-strip" id="timeline_phases"></div>
+            <p id="timeline_note">-</p>
+          </section>
+        </div>
       </div>
     </div>
   </section>
@@ -838,6 +1120,7 @@
     const roleButtons = Array.from(document.querySelectorAll("[data-role]"));
     const tabButtons = Array.from(document.querySelectorAll("[data-view]"));
     const synergyInput = document.querySelector("#synergy_champion");
+    const synergySort = document.querySelector("#synergy_sort");
     const counterInput = document.querySelector("#counter_champion");
     const tierLane = document.querySelector("#tier_lane");
     const metrics = {
@@ -852,8 +1135,10 @@
     let championData = {bottom: [], support: []};
     let latestRows = [];
     let latestPreciseRows = [];
+    let latestSynergyRows = [];
     let excludedChampionIds = new Set();
     let pendingTimer = null;
+    const suggestionState = {};
     const tierOrder = {
       "S+": 0, "S": 1, "S-": 2,
       "A+": 3, "A": 4, "A-": 5,
@@ -898,6 +1183,67 @@
       return championData[lane] || [];
     }
 
+    function compactText(value) {
+      return String(value || "").trim().toLowerCase().replace(/\s+/g, "");
+    }
+
+    function tokenTypeBonus(type) {
+      return {
+        cn_name: 90,
+        alias: 80,
+        initials: 72,
+        pinyin: 66,
+        id: 60,
+        english: 52,
+        champion_id: 100,
+      }[type] || 40;
+    }
+
+    function matchToken(token, rawValue) {
+      const value = String(rawValue || "").trim().toLowerCase();
+      const compact = compactText(value);
+      if (!value) return null;
+      const tokenValue = String(token.value || token).toLowerCase();
+      const tokenCompact = String(token.compact || compactText(tokenValue)).toLowerCase();
+      const tokenType = token.type || "text";
+      const label = token.label || tokenValue;
+      let score = 0;
+      if (tokenValue === value || tokenCompact === compact) score = 1000;
+      else if (tokenValue.startsWith(value) || tokenCompact.startsWith(compact)) score = 760;
+      else if (tokenValue.includes(value) || tokenCompact.includes(compact)) score = 460;
+      if (!score) return null;
+      return {score: score + tokenTypeBonus(tokenType), label, type: tokenType};
+    }
+
+    function championTokens(champion) {
+      if (champion.search_tokens && champion.search_tokens.length) return champion.search_tokens;
+      const base = [champion.cn_name, champion.id, champion.name, String(champion.champion_id || ""), ...(champion.aliases || [])];
+      return base.filter(Boolean).map((value) => ({value, compact: compactText(value), type: "text", label: value}));
+    }
+
+    function rankedChampionMatches(rawValue, lane) {
+      const value = String(rawValue || "").trim();
+      if (!value) return [];
+      return getChampionPool(lane)
+        .map((champion) => {
+          const best = championTokens(champion)
+            .map((token) => matchToken(token, value))
+            .filter(Boolean)
+            .sort((a, b) => b.score - a.score)[0];
+          if (!best) return null;
+          const popularity = Math.min(champion.games || 0, 20000) / 20000;
+          const tierRank = tierOrder[champion.tier] ?? 20;
+          return {
+            champion,
+            score: best.score + popularity - tierRank * 0.01,
+            matchLabel: best.label,
+            matchType: best.type,
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score || a.champion.cn_name.localeCompare(b.champion.cn_name, "zh-CN"));
+    }
+
     function findChampion(rawValue, lane) {
       const value = rawValue.trim().toLowerCase();
       if (!value) return null;
@@ -914,8 +1260,8 @@
           String(champion.champion_id) === value;
       });
       if (exact) return exact;
-      const fuzzy = champions.find((champion) => champion.search_text.includes(value));
-      return fuzzy || null;
+      const fuzzy = rankedChampionMatches(rawValue, lane)[0];
+      return fuzzy ? fuzzy.champion : null;
     }
 
     function canonicalizeInput(input, lane) {
@@ -927,12 +1273,34 @@
       return champion;
     }
 
-    function matchedAlias(champion, value) {
+    function matchedAlias(champion, value, matchLabel = "") {
       const query = value.trim().toLowerCase();
       if (!query) return "";
+      if (matchLabel) return `匹配：${matchLabel}`;
       const aliases = champion.aliases || [];
       const alias = aliases.find((item) => item.toLowerCase().includes(query));
       return alias ? `匹配：${alias}` : `${champion.name} / ${champion.tier || "-"}`;
+    }
+
+    function setActiveSuggestion(input, index) {
+      const state = suggestionState[input.id];
+      if (!state || !state.matches.length) return;
+      state.activeIndex = (index + state.matches.length) % state.matches.length;
+      const buttons = Array.from(document.querySelectorAll(`#${input.id}_suggestions .suggestion`));
+      buttons.forEach((button, buttonIndex) => {
+        button.classList.toggle("active", buttonIndex === state.activeIndex);
+      });
+      buttons[state.activeIndex]?.scrollIntoView({block: "nearest"});
+    }
+
+    function selectSuggestion(input, onSelect) {
+      const state = suggestionState[input.id];
+      if (!state || !state.matches.length) return false;
+      const match = state.matches[state.activeIndex] || state.matches[0];
+      input.value = inputValue(match.champion);
+      hideSuggestions(input.id);
+      if (onSelect) onSelect(match.champion);
+      return true;
     }
 
     function showSuggestions(input, lane, onSelect) {
@@ -943,21 +1311,21 @@
         hideSuggestions(input.id);
         return;
       }
-      const rows = getChampionPool(lane)
-        .filter((champion) => champion.search_text.includes(value))
-        .slice(0, 8);
-      if (!rows.length) {
+      const matches = rankedChampionMatches(value, lane).slice(0, 8);
+      suggestionState[input.id] = {matches, activeIndex: 0};
+      if (!matches.length) {
         hideSuggestions(input.id);
         return;
       }
       box.innerHTML = "";
-      rows.forEach((champion) => {
+      matches.forEach((match, index) => {
+        const champion = match.champion;
         const button = document.createElement("button");
-        button.className = "suggestion";
+        button.className = `suggestion${index === 0 ? " active" : ""}`;
         button.type = "button";
         button.innerHTML = `
           <img src="${champion.avatar}" alt="">
-          <span><strong>${champion.cn_name}</strong><span>${matchedAlias(champion, value)}</span></span>
+          <span><strong>${champion.cn_name}</strong><span>${matchedAlias(champion, value, match.matchLabel)}</span></span>
         `;
         button.addEventListener("mousedown", (event) => {
           event.preventDefault();
@@ -965,6 +1333,7 @@
           hideSuggestions(input.id);
           if (onSelect) onSelect(champion);
         });
+        button.addEventListener("mouseenter", () => setActiveSuggestion(input, index));
         box.appendChild(button);
       });
       box.classList.add("active");
@@ -973,6 +1342,7 @@
     function hideSuggestions(inputId) {
       const box = document.querySelector(`#${inputId}_suggestions`);
       if (box) box.classList.remove("active");
+      if (suggestionState[inputId]) suggestionState[inputId].matches = [];
     }
 
     function valueOrNull(id) {
@@ -1132,35 +1502,119 @@
       renderRows();
     }
 
+    function renderTagGroups(row) {
+      const groups = row.precision_tag_groups || {};
+      const lines = [
+        ["打法", groups.combo || row.combo_tags || []],
+        ["英雄", groups.hero || row.hero_tags || []],
+        ["数据", groups.data || row.data_tags || row.precision_tags || []],
+      ];
+      return lines
+        .filter(([, tags]) => tags && tags.length)
+        .map(([label, tags]) => `
+          <div class="tag-line">
+            <span class="tag-label">${label}</span>
+            ${tags.map((tag) => `<span class="tag">${tag}</span>`).join("")}
+          </div>
+        `)
+        .join("");
+    }
+
+    function splitAdvice(text) {
+      return String(text || "")
+        .split(/[。；]/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .slice(0, 4);
+    }
+
+    function scoreTile(label, value, note = "") {
+      return `
+        <div class="score-tile">
+          <span>${label}</span>
+          <strong>${value ?? "-"}</strong>
+          ${note ? `<small>${note}</small>` : ""}
+        </div>
+      `;
+    }
+
+    function renderRiskItems(risks) {
+      const rows = (risks && risks.length ? risks : ["暂无明显数据风险，仍需结合阵容和熟练度。"])
+        .map((risk) => String(risk).replace(/。$/, ""));
+      return rows.map((risk) => {
+        const ok = risk.includes("暂无明显");
+        return `<div class="risk-item ${ok ? "ok" : ""}">${risk}</div>`;
+      }).join("");
+    }
+
     function openPrecisionDetail(row) {
       const detail = row.precision_detail || {};
-      document.querySelector("#precision_title").textContent = `${row.display_name} ${row.english_name}`;
-      document.querySelector("#precision_conclusion").textContent = detail.conclusion || row.coach_summary || row.explanation || "-";
-      document.querySelector("#precision_tags").innerHTML = (row.precision_tags || [])
-        .map((tag) => `<span class="tag">${tag}</span>`).join("");
-      document.querySelector("#precision_playstyle").textContent = detail.coach_playstyle || row.coach_playstyle || "-";
       const data = detail.data || {};
-      document.querySelector("#precision_data").textContent =
-        `推荐指数 ${data.recommend_index ?? "-"}；可信度 ${data.confidence_label ?? "-"}；基础 ${data.base_calibrated_score ?? "-"}（原始 ${data.base_rating ?? "-"}）；配合 ${data.synergy_calibrated_score ?? "-"}（原始 ${data.synergy_bonus ?? "-"}，成熟度 ${data.synergy_maturity_score ?? "-"}）；对位 ${data.counter_calibrated_score ?? "-"}（原始 ${data.counter_bonus ?? "-"}，成熟度 ${data.counter_maturity_score ?? "-"}）；配合场次 ${data.duo_games ?? 0}；对位场次 ${data.matchup_games ?? 0}。`;
-      document.querySelector("#precision_risks").innerHTML = (detail.risks || row.coach_risks || ["暂无明显数据风险。"]).join("<br>");
+      document.querySelector("#precision_title").textContent = `${row.display_name} ${row.english_name}`;
+      document.querySelector("#precision_avatar").src = row.avatar || "";
+      document.querySelector("#precision_subtitle").textContent =
+        `${row.tier || "-"} · ${row.confidence_label || data.confidence_label || "-"}可信 · 精准推荐`;
+      document.querySelector("#precision_index").textContent = Number(row.display_winrate || data.recommend_index || 0).toFixed(1);
+      document.querySelector("#precision_conclusion").textContent = detail.conclusion || row.coach_summary || row.explanation || "-";
+      document.querySelector("#precision_tags").innerHTML = renderTagGroups(row);
+      document.querySelector("#precision_playstyle").innerHTML = splitAdvice(detail.coach_playstyle || row.coach_playstyle || "")
+        .map((item) => `<li>${item}</li>`)
+        .join("") || "<li>根据当前下路信息选择进退，优先避免无意义亏线。</li>";
+      document.querySelector("#precision_scores").innerHTML = [
+        scoreTile("基础", data.base_calibrated_score ?? row.base_calibrated_score ?? "-", `原始 ${data.base_rating ?? row.base_rating ?? "-"}`),
+        scoreTile("配合", data.synergy_calibrated_score ?? row.synergy_calibrated_score ?? "-", `场次 ${data.duo_games ?? row.duo_games ?? 0}`),
+        scoreTile("对位", data.counter_calibrated_score ?? row.counter_calibrated_score ?? "-", `场次 ${data.matchup_games ?? row.matchup_games ?? 0}`),
+      ].join("");
+      const basis = [
+        [data.base_calibrated_score ?? row.base_calibrated_score ?? 0, "基础强度"],
+        [data.synergy_calibrated_score ?? row.synergy_calibrated_score ?? 0, "配合数据"],
+        [data.counter_calibrated_score ?? row.counter_calibrated_score ?? 0, "对位数据"],
+      ].sort((a, b) => Number(b[0]) - Number(a[0]))[0][1];
+      document.querySelector("#precision_score_note").textContent =
+        `这条推荐主要参考${basis}；分数只用于候选英雄之间比较，不等于真实胜率。`;
+      document.querySelector("#precision_data").innerHTML = [
+        scoreTile("可信度", data.confidence_label ?? row.confidence_label ?? "-"),
+        scoreTile("配合样本", data.duo_games ?? row.duo_games ?? 0, `成熟度 ${data.synergy_maturity_score ?? "-"}`),
+        scoreTile("对位样本", data.matchup_games ?? row.matchup_games ?? 0, `成熟度 ${data.counter_maturity_score ?? "-"}`),
+      ].join("");
+      const risks = detail.risks || row.coach_risks || [];
+      const hasOnlyEmptyRisk = risks.length <= 1 && String(risks[0] || "").includes("暂无明显");
+      document.querySelector("#precision_risk_card").style.display = hasOnlyEmptyRisk ? "none" : "block";
+      document.querySelector("#precision_risks").innerHTML = renderRiskItems(risks);
       renderTimeline(detail.timeline || {});
       precisionModal.classList.add("active");
       precisionModal.setAttribute("aria-hidden", "false");
     }
 
+    function phaseStrengthClass(point) {
+      const bonus = point["强势偏移"] ?? point.time_bonus ?? 0;
+      if (bonus >= 12 || point["强度"] === "强") return "strong";
+      if (bonus <= -12 || point["强度"] === "弱") return "weak";
+      return "even";
+    }
+
+    function phaseStrengthText(point) {
+      const kind = phaseStrengthClass(point);
+      if (kind === "strong") return "强";
+      if (kind === "weak") return "弱";
+      return "平";
+    }
+
     function renderTimeline(timeline) {
       const chart = document.querySelector("#timeline_chart");
       const note = document.querySelector("#timeline_note");
+      const phases = document.querySelector("#timeline_phases");
       const allyLine = timeline.ally || timeline.primary;
       const enemyLine = timeline.enemy;
-      note.textContent = timeline.说明 || timeline.note || "-";
+      note.textContent = "强/弱表示这个时间段相对该英雄自身平均更强或更弱，不代表真实胜率。";
+      phases.innerHTML = "";
       if (!timeline.available || !allyLine || !allyLine.points || !allyLine.points.length) {
         chart.innerHTML = `<p>暂无时间线数据。更新数据缓存后可显示强势曲线。</p>`;
         return;
       }
       const width = 520;
-      const height = 190;
-      const pad = 34;
+      const height = 132;
+      const pad = 28;
       const allPoints = [...allyLine.points, ...((enemyLine && enemyLine.points) || [])];
       const bonuses = allPoints.map((point) => point["强势偏移"] ?? point.time_bonus ?? 0);
       const maxAbs = Math.max(12, ...bonuses.map((value) => Math.abs(value)));
@@ -1179,7 +1633,6 @@
       const linePath = (coords) => coords.map((item) => `${item.x},${item.y}`).join(" ");
       const dots = (coords, className = "") => coords.map((item) => `
         <circle class="timeline-dot ${className}" cx="${item.x}" cy="${item.y}" r="4"></circle>
-        <text class="timeline-label" x="${item.x}" y="${item.y - 9}" text-anchor="middle">${item.bonus > 0 ? "+" : ""}${item.bonus}</text>
       `).join("");
       const xLabels = allyCoords.map((item) => `
         <text class="timeline-label" x="${item.x}" y="${height - 10}" text-anchor="middle">${item.point["时间段"] || item.point.label}</text>
@@ -1191,8 +1644,8 @@
       chart.innerHTML = `
         <svg class="timeline-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="强势时间线">
           <line class="timeline-axis" x1="${pad}" y1="${height / 2}" x2="${width - pad}" y2="${height / 2}"></line>
-          <text class="timeline-label" x="${pad}" y="16">强势偏移 +</text>
-          <text class="timeline-label" x="${pad}" y="${height - 28}">强势偏移 -</text>
+          <text class="timeline-label" x="${pad}" y="14">强</text>
+          <text class="timeline-label" x="${pad}" y="${height - 24}">弱</text>
           <polyline class="timeline-line" points="${linePath(allyCoords)}"></polyline>
           ${enemyPolyline}
           ${dots(allyCoords)}
@@ -1202,13 +1655,42 @@
           <span class="legend-item">我方趋势：${allyLine.label || allyLine.champion || "推荐选择"}</span>
           ${enemyLegend}
         </div>
-        <p>结论：${allyLine["结论"] || allyLine.summary || ""}</p>
+        <p><strong>结论：</strong>${allyLine["结论"] || allyLine.summary || ""}</p>
       `;
+      phases.innerHTML = allyLine.points.map((point) => `
+        <div class="phase-card ${phaseStrengthClass(point)}">
+          <strong>${point["时间段"] || point.label}</strong>
+          <span>${phaseStrengthText(point)}</span>
+        </div>
+      `).join("");
     }
 
     function scheduleRecommend() {
       clearTimeout(pendingTimer);
       pendingTimer = setTimeout(recommend, 250);
+    }
+
+    function handleSearchKeydown(event, input, lane, onSelect, onEnter) {
+      const state = suggestionState[input.id];
+      if (event.key === "ArrowDown" && state?.matches?.length) {
+        event.preventDefault();
+        setActiveSuggestion(input, state.activeIndex + 1);
+        return;
+      }
+      if (event.key === "ArrowUp" && state?.matches?.length) {
+        event.preventDefault();
+        setActiveSuggestion(input, state.activeIndex - 1);
+        return;
+      }
+      if (event.key === "Escape") {
+        hideSuggestions(input.id);
+        return;
+      }
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      const selected = selectSuggestion(input, onSelect);
+      if (!selected) canonicalizeInput(input, lane);
+      if (onEnter) onEnter();
     }
 
     async function loadChampions() {
@@ -1270,6 +1752,9 @@
         showSuggestions(input, lane, scheduleRecommend);
         scheduleRecommend();
       });
+      input.addEventListener("keydown", (event) => {
+        handleSearchKeydown(event, input, lane, scheduleRecommend, scheduleRecommend);
+      });
       input.addEventListener("blur", () => {
         setTimeout(() => {
           canonicalizeInput(input, lane);
@@ -1315,15 +1800,21 @@
     });
 
     synergyInput.addEventListener("input", () => showSuggestions(synergyInput, "all"));
+    synergyInput.addEventListener("keydown", (event) => {
+      handleSearchKeydown(event, synergyInput, "all", null, querySynergy);
+    });
     synergyInput.addEventListener("blur", () => setTimeout(() => canonicalizeInput(synergyInput, "all"), 120));
     counterInput.addEventListener("input", () => showSuggestions(counterInput, "all"));
+    counterInput.addEventListener("keydown", (event) => {
+      handleSearchKeydown(event, counterInput, "all", null, queryCounter);
+    });
     counterInput.addEventListener("blur", () => setTimeout(() => canonicalizeInput(counterInput, "all"), 120));
     exclusionInput.addEventListener("input", () => showSuggestions(exclusionInput, recommendationLane(), addExcludedChampion));
     exclusionInput.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter") return;
-      event.preventDefault();
-      const champion = findChampion(exclusionInput.value, recommendationLane());
-      addExcludedChampion(champion);
+      handleSearchKeydown(event, exclusionInput, recommendationLane(), addExcludedChampion, () => {
+        const champion = findChampion(exclusionInput.value, recommendationLane());
+        addExcludedChampion(champion);
+      });
     });
 
     function renderSimpleRows(tbody, rows, scoreLabel = "win_rate", showGames = false, showCounterMeta = false) {
@@ -1351,22 +1842,44 @@
       });
     }
 
+    function sortedSynergyRows() {
+      const rows = [...latestSynergyRows];
+      const sortBy = synergySort.value;
+      rows.sort((a, b) => {
+        const diff = (b[sortBy] || 0) - (a[sortBy] || 0);
+        if (diff !== 0) return diff;
+        const fallback = sortBy === "games" ? "win_rate" : "games";
+        return (b[fallback] || 0) - (a[fallback] || 0);
+      });
+      return rows;
+    }
+
+    function renderSynergyRows() {
+      renderSimpleRows(document.querySelector("#synergy_results"), sortedSynergyRows(), "win_rate", true);
+    }
+
     async function querySynergy() {
       const match = canonicalizeInput(synergyInput, "all");
       const champion = match ? match.id : null;
       if (!champion) return;
-      const data = await (await fetch(`/api/synergy/${champion}?top_n=30`)).json();
-      renderSimpleRows(document.querySelector("#synergy_results"), data.results || [], "win_rate", true);
-      statusEl.textContent = `协同查询：${data.champion.display_name || data.champion.cn_name || champion}`;
+      const data = await (await fetch(`/api/synergy/${champion}?top_n=all`)).json();
+      latestSynergyRows = data.results || [];
+      renderSynergyRows();
+      const sortText = synergySort.value === "games" ? "组合场次最多" : "胜率最高";
+      statusEl.textContent = `协同查询：${data.champion.display_name || data.champion.cn_name || champion}，${sortText}`;
     }
 
     async function queryCounter() {
       const match = canonicalizeInput(counterInput, "all");
       const champion = match ? match.id : null;
       if (!champion) return;
-      const data = await (await fetch(`/api/counter/${champion}?top_n=10`)).json();
-      renderSimpleRows(document.querySelector("#counter_adc_results"), data.adc || [], "win_rate", true, true);
-      renderSimpleRows(document.querySelector("#counter_support_results"), data.support || [], "win_rate", true, true);
+      const data = await (await fetch(`/api/counter/${champion}?top_n=all`)).json();
+      const adcRows = data.adc || [];
+      const supportRows = data.support || [];
+      renderSimpleRows(document.querySelector("#counter_adc_results"), adcRows, "win_rate", true, true);
+      renderSimpleRows(document.querySelector("#counter_support_results"), supportRows, "win_rate", true, true);
+      document.querySelector("#counter_adc_count").textContent = `${adcRows.length} 条`;
+      document.querySelector("#counter_support_count").textContent = `${supportRows.length} 条`;
       statusEl.textContent = `反制查询：${champion}`;
     }
 
@@ -1389,6 +1902,7 @@
       });
     });
     document.querySelector("#query_synergy").addEventListener("click", querySynergy);
+    synergySort.addEventListener("change", renderSynergyRows);
     document.querySelector("#query_counter").addEventListener("click", queryCounter);
     document.querySelector("#query_tier").addEventListener("click", queryTier);
     tierLane.addEventListener("change", queryTier);

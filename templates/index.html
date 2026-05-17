@@ -933,9 +933,9 @@
           <th>英雄</th>
           <th>梯队</th>
           <th>推荐指数<span class="help-tip" tabindex="0" data-tip="综合排序用的推荐值，不是真实胜率。公式：推荐分 = 基础校准分×基础权重 + 配合校准分×配合权重 + 对位校准分×对位权重；推荐指数 = 100 / (1 + 10^(-推荐分 / 400))。权重会随 BP 信息变化。">?</span></th>
-          <th>基础表现<span class="help-tip" tabindex="0" data-tip="表格显示用于排序的基础校准分。原始基础表现 = Tier 先验 + 胜率修正；校准公式 = 30 × tanh(原始分 / 30)，用于让基础、配合、对位进入同一尺度。">?</span></th>
-          <th>配合<span class="help-tip" tabindex="0" data-tip="表格显示用于排序的配合校准分。原始配合分 = 置信度 × (55%×组合绝对表现 + 25%×超预期配合 + 20%×组合成熟度)；成熟度综合全局场次和该英雄内相对场次，实际胜率低于 48.5% 时不加成熟度。超高场次且表现不差的成熟组合会有小额托底。">?</span></th>
-          <th>对位<span class="help-tip" tabindex="0" data-tip="表格显示用于排序的对位校准分。原始对位分 = 置信度 × (55%×对位绝对表现 + 25%×超预期对位 + 20%×对位样本成熟度)；成熟度代表样本稳定和对局熟悉度，不等于更克制。超高场次且表现不差的常见对位会有小额托底。">?</span></th>
+          <th>基础表现<span class="help-tip" tabindex="0" data-tip="表格显示用于排序的基础校准分。原始基础表现 = Tier 先验 + 胜率修正；校准公式 = 22 × tanh(原始分 / 30)，用于压低版本强英雄的单项统治力。">?</span></th>
+          <th>配合<span class="help-tip" tabindex="0" data-tip="表格显示用于排序的配合校准分。原始配合分 = 置信度 × (45%×组合绝对表现 + 35%×超预期配合 + 20%×组合成熟度)；成熟度综合全局场次和该英雄内相对场次，实际胜率低于 48.5% 时不加成熟度。超高场次且表现不差的成熟组合会有小额托底。">?</span></th>
+          <th>对位<span class="help-tip" tabindex="0" data-tip="表格显示用于排序的对位校准分。原始对位分 = 置信度 × (45%×对位绝对表现 + 35%×超预期对位 + 20%×对位样本成熟度)；成熟度代表样本稳定和对局熟悉度，不等于更克制。超高场次且表现不差的常见对位会有小额托底。">?</span></th>
           <th>参考场次<span class="help-tip" tabindex="0" data-tip="用于判断本条推荐是否有足够数据支撑。公式：有 BP 信息时，参考场次 = 配合场次 + 对位场次；盲选时，参考场次 = 英雄自身基础场次。场次越高，结果越稳定。">?</span></th>
           <th>可信度<span class="help-tip" tabindex="0" data-tip="按参考场次分级。公式：参考场次 ≥3000 为高，1000-2999 为中，300-999 为低，低于 300 为极低。可信度只说明样本是否充足，不等于这把一定好赢。">?</span></th>
           <th>解释</th>
@@ -1138,6 +1138,9 @@
     let latestSynergyRows = [];
     let excludedChampionIds = new Set();
     let pendingTimer = null;
+    let recommendAbortController = null;
+    let latestRecommendKey = "";
+    const recommendCache = new Map();
     const suggestionState = {};
     const tierOrder = {
       "S+": 0, "S": 1, "S-": 2,
@@ -1667,7 +1670,32 @@
 
     function scheduleRecommend() {
       clearTimeout(pendingTimer);
-      pendingTimer = setTimeout(recommend, 250);
+      pendingTimer = setTimeout(recommend, 450);
+    }
+
+    function buildRecommendPayload() {
+      return {
+        role,
+        top_n: 30,
+        bp_state: {
+          ally_ad: valueOrNull("ally_ad"),
+          ally_sup: valueOrNull("ally_sup"),
+          enemy_ad: valueOrNull("enemy_ad"),
+          enemy_sup: valueOrNull("enemy_sup"),
+        },
+      };
+    }
+
+    function applyRecommendData(data, fromCache = false) {
+      latestRows = data.results || [];
+      latestPreciseRows = data.precise_results || latestRows.slice(0, 7);
+      metrics.state.textContent = data.state_info?.label || data.state || "-";
+      metrics.stateDesc.textContent = data.state_info?.description || "-";
+      metrics.total.textContent = String(data.summary?.total ?? latestRows.length);
+      metrics.high.textContent = String(data.summary?.confidence_counts?.high ?? 0);
+      renderRows();
+      const cached = fromCache ? "（已缓存）" : "";
+      statusEl.textContent = `已排除已选英雄：${(data.excluded_champions || []).join(", ") || "无"}${cached}`;
     }
 
     function handleSearchKeydown(event, input, lane, onSelect, onEnter) {
@@ -1705,33 +1733,46 @@
     }
 
     async function recommend() {
+      const payload = buildRecommendPayload();
+      const requestKey = JSON.stringify(payload);
+      latestRecommendKey = requestKey;
+
+      if (recommendCache.has(requestKey)) {
+        applyRecommendData(recommendCache.get(requestKey), true);
+        return;
+      }
+
+      if (recommendAbortController) {
+        recommendAbortController.abort();
+      }
+      recommendAbortController = new AbortController();
       recommendButton.disabled = true;
       statusEl.textContent = "正在计算推荐...";
-      const payload = {
-        role,
-        top_n: 30,
-        bp_state: {
-          ally_ad: valueOrNull("ally_ad"),
-          ally_sup: valueOrNull("ally_sup"),
-          enemy_ad: valueOrNull("enemy_ad"),
-          enemy_sup: valueOrNull("enemy_sup"),
-        },
-      };
-      const res = await fetch("/api/recommend", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      latestRows = data.results || [];
-      latestPreciseRows = data.precise_results || latestRows.slice(0, 7);
-      metrics.state.textContent = data.state_info?.label || data.state || "-";
-      metrics.stateDesc.textContent = data.state_info?.description || "-";
-      metrics.total.textContent = String(data.summary?.total ?? latestRows.length);
-      metrics.high.textContent = String(data.summary?.confidence_counts?.high ?? 0);
-      renderRows();
-      statusEl.textContent = `已排除已选英雄：${(data.excluded_champions || []).join(", ") || "无"}`;
-      recommendButton.disabled = false;
+
+      try {
+        const res = await fetch("/api/recommend", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload),
+          signal: recommendAbortController.signal,
+        });
+        const data = await res.json();
+        recommendCache.set(requestKey, data);
+        if (recommendCache.size > 24) {
+          recommendCache.delete(recommendCache.keys().next().value);
+        }
+        if (latestRecommendKey === requestKey) {
+          applyRecommendData(data);
+        }
+      } catch (error) {
+        if (error.name !== "AbortError") {
+          statusEl.textContent = "推荐计算失败，请稍后再试。";
+        }
+      } finally {
+        if (latestRecommendKey === requestKey) {
+          recommendButton.disabled = false;
+        }
+      }
     }
 
     roleButtons.forEach((button) => {
@@ -1750,7 +1791,6 @@
       const input = inputs[id];
       input.addEventListener("input", () => {
         showSuggestions(input, lane, scheduleRecommend);
-        scheduleRecommend();
       });
       input.addEventListener("keydown", (event) => {
         handleSearchKeydown(event, input, lane, scheduleRecommend, scheduleRecommend);

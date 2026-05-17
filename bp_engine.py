@@ -77,10 +77,10 @@ DUO_PRIOR_GAMES = 1000
 MATCHUP_PRIOR_GAMES = 1000
 LEGACY_RELATION_GAMES = 300
 RELATION_CONFIDENCE_GAMES = 1500
-SYNERGY_ABSOLUTE_WEIGHT = 0.55
-SYNERGY_RESIDUAL_WEIGHT = 0.25
-COUNTER_ABSOLUTE_WEIGHT = 0.55
-COUNTER_RESIDUAL_WEIGHT = 0.25
+SYNERGY_ABSOLUTE_WEIGHT = 0.45
+SYNERGY_RESIDUAL_WEIGHT = 0.35
+COUNTER_ABSOLUTE_WEIGHT = 0.45
+COUNTER_RESIDUAL_WEIGHT = 0.35
 RELATION_MATURITY_WEIGHT = 0.20
 RELATION_MATURITY_REFERENCE_GAMES = 3000
 RELATION_LOCAL_MATURITY_FACTOR = 0.85
@@ -91,11 +91,12 @@ MATURE_RELATION_FLOOR_MIN_GAP = -1.0
 MATURE_RELATION_FLOOR_SCORE = 3.0
 COMPONENT_CALIBRATION_SCALE = 30.0
 COMPONENT_CALIBRATION_LIMIT = 30.0
+BASE_CALIBRATION_LIMIT = 22.0
 STRONG_RELATION_WINRATE = 0.54
 STRONG_RELATION_GAMES = 1000
 STRONG_SYNERGY_FLOOR = 8.0
 STRONG_COUNTER_FLOOR = 6.0
-MISSING_SYNERGY_PENALTY = -6.0
+MISSING_SYNERGY_PENALTY = -10.0
 MISSING_COUNTER_PENALTY = -4.0
 MIN_WINRATE = 0.001
 MAX_WINRATE = 0.999
@@ -198,6 +199,10 @@ def relation_maturity_score(games, local_top_games=0, actual_absolute_winrate=No
 
 def calibrated_component_score(value):
     return math.tanh(float(value or 0) / COMPONENT_CALIBRATION_SCALE) * COMPONENT_CALIBRATION_LIMIT
+
+
+def calibrated_base_score(value):
+    return math.tanh(float(value or 0) / COMPONENT_CALIBRATION_SCALE) * BASE_CALIBRATION_LIMIT
 
 
 def blended_relation_score(
@@ -1227,7 +1232,7 @@ def run_recommend(role, bp_state, db, top_n=None):
         )
         synergy_adjusted = adjusted_synergy_score(synergy, bool(ally))
         counter_adjusted = adjusted_counter_score(counter, len(enemy_context))
-        base_calibrated = calibrated_component_score(score["base_rating"])
+        base_calibrated = calibrated_base_score(score["base_rating"])
         synergy_calibrated = calibrated_component_score(synergy_adjusted)
         counter_calibrated = calibrated_component_score(counter_adjusted)
         final_rating = (

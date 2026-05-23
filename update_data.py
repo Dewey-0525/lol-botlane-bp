@@ -26,6 +26,13 @@ import time
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(BASE_DIR, "data", "botlane_dataset.json")
 BACKUP_DIR = os.path.join(BASE_DIR, "data", "backups")
+MIN_BOTTOM_CHAMPIONS = 30
+MIN_SUPPORT_CHAMPIONS = 60
+MIN_HERO_STATS_RATIO = 0.9
+MIN_SYNERGY_ROWS = 700
+MIN_COUNTER_ADC_ROWS = 700
+MIN_COUNTER_SUP_ROWS = 900
+MAX_FETCH_ERROR_RATIO = 0.25
 
 
 def run_command(args):
@@ -40,16 +47,43 @@ def validate_dataset(path=DATA_PATH):
     with open(path, "r", encoding="utf-8") as file:
         data = json.load(file)
 
-    for key in ["meta", "tiers", "synergy", "counter"]:
+    for key in [
+        "meta",
+        "tiers",
+        "hero_stats",
+        "synergy",
+        "counter",
+        "synergy_by_lane",
+        "counter_by_lane",
+    ]:
         if key not in data:
             raise ValueError(f"数据库缺少字段: {key}")
 
     tiers = data["tiers"]
-    bottom_count = len(tiers.get("bottom", {}))
-    support_count = len(tiers.get("support", {}))
-    if bottom_count < 10 or support_count < 10:
+    bottom_count = sum(
+        1 for tier in tiers.get("bottom", {}).values() if tier and tier != "?"
+    )
+    support_count = sum(
+        1 for tier in tiers.get("support", {}).values() if tier and tier != "?"
+    )
+    if bottom_count < MIN_BOTTOM_CHAMPIONS or support_count < MIN_SUPPORT_CHAMPIONS:
         raise ValueError(
             f"梯队数据过少: bottom={bottom_count}, support={support_count}"
+        )
+
+    hero_stats = data["hero_stats"]
+    bottom_stats_count = len(hero_stats.get("bottom", {}))
+    support_stats_count = len(hero_stats.get("support", {}))
+    bottom_stats_ratio = bottom_stats_count / bottom_count if bottom_count else 0
+    support_stats_ratio = support_stats_count / support_count if support_count else 0
+    if (
+        bottom_stats_ratio < MIN_HERO_STATS_RATIO
+        or support_stats_ratio < MIN_HERO_STATS_RATIO
+    ):
+        raise ValueError(
+            "基础英雄数据覆盖不足: "
+            f"bottom={bottom_stats_count}/{bottom_count}, "
+            f"support={support_stats_count}/{support_count}"
         )
 
     synergy_rows = sum(len(value) for value in data["synergy"].values())
@@ -59,20 +93,42 @@ def validate_dataset(path=DATA_PATH):
     counter_sup_rows = sum(
         len(value.get("vs_sup", {})) for value in data["counter"].values()
     )
-    if synergy_rows <= 0 or counter_adc_rows <= 0 or counter_sup_rows <= 0:
+    if (
+        synergy_rows < MIN_SYNERGY_ROWS
+        or counter_adc_rows < MIN_COUNTER_ADC_ROWS
+        or counter_sup_rows < MIN_COUNTER_SUP_ROWS
+    ):
         raise ValueError(
-            "协同/克制数据为空: "
+            "协同/克制数据覆盖不足: "
             f"synergy={synergy_rows}, "
             f"counter_adc={counter_adc_rows}, "
             f"counter_sup={counter_sup_rows}"
         )
 
+    for lane in ("bottom", "support"):
+        if lane not in data["synergy_by_lane"] or lane not in data["counter_by_lane"]:
+            raise ValueError(f"按位置矩阵缺少 lane: {lane}")
+        if not data["synergy_by_lane"][lane] or not data["counter_by_lane"][lane]:
+            raise ValueError(f"按位置矩阵为空: {lane}")
+
+    meta = data.get("meta", {})
+    fetch_errors_count = int(meta.get("fetch_errors_count") or 0)
+    coverage = meta.get("coverage") or {}
+    fetch_attempts = int(coverage.get("fetch_attempts") or 0)
+    if fetch_attempts and fetch_errors_count / fetch_attempts > MAX_FETCH_ERROR_RATIO:
+        raise ValueError(
+            "抓取失败比例过高: "
+            f"errors={fetch_errors_count}, attempts={fetch_attempts}"
+        )
+
     print(
         "数据校验通过: "
         f"bottom={bottom_count}, support={support_count}, "
+        f"hero_stats={bottom_stats_count + support_stats_count}, "
         f"synergy={synergy_rows}, "
         f"counter_adc={counter_adc_rows}, "
-        f"counter_sup={counter_sup_rows}"
+        f"counter_sup={counter_sup_rows}, "
+        f"fetch_errors={fetch_errors_count}"
     )
     return data
 

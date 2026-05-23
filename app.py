@@ -42,6 +42,80 @@ app = Flask(__name__)
 DB = None
 CHAMPION_META = None
 
+BP_SLOT_LANES = {
+    "ally_ad": "bottom",
+    "enemy_ad": "bottom",
+    "ally_sup": "support",
+    "enemy_sup": "support",
+}
+
+BP_SLOT_LABELS = {
+    "ally_ad": "己方 ADC",
+    "enemy_ad": "敌方 ADC",
+    "ally_sup": "己方辅助",
+    "enemy_sup": "敌方辅助",
+}
+
+
+def has_chinese(text):
+    return any("\u4e00" <= char <= "\u9fff" for char in text)
+
+
+def token_value(value, token_type, label=None):
+    value = str(value).strip().lower()
+    if not value:
+        return None
+    return {
+        "value": value,
+        "compact": "".join(value.split()),
+        "type": token_type,
+        "label": label or value,
+    }
+
+
+def add_token(tokens, seen, value, token_type, label=None):
+    token = token_value(value, token_type, label)
+    if not token:
+        return
+    key = (token["value"], token["type"])
+    if key in seen:
+        return
+    seen.add(key)
+    tokens.append(token)
+
+
+def pinyin_tokens(text):
+    if not lazy_pinyin or not Style or not has_chinese(text):
+        return []
+    syllables = [item for item in lazy_pinyin(text, errors="ignore") if item]
+    initials = [
+        item for item in lazy_pinyin(text, style=Style.FIRST_LETTER, errors="ignore") if item
+    ]
+    if not syllables:
+        return []
+    values = [
+        ("".join(syllables), "pinyin", text),
+        (" ".join(syllables), "pinyin", text),
+    ]
+    if initials:
+        values.append(("".join(initials), "initials", text))
+    return values
+
+
+def build_search_tokens(cn_name, key, champion_id, aliases):
+    tokens = []
+    seen = set()
+    add_token(tokens, seen, cn_name, "cn_name", cn_name)
+    add_token(tokens, seen, key, "id", key)
+    add_token(tokens, seen, key.title(), "english", key.title())
+    add_token(tokens, seen, champion_id, "champion_id", str(champion_id))
+    for alias in aliases:
+        add_token(tokens, seen, alias, "alias", alias)
+    for source in [cn_name, *aliases]:
+        for value, token_type, label in pinyin_tokens(source):
+            add_token(tokens, seen, value, token_type, label)
+    return tokens
+
 
 def has_chinese(text):
     return any("\u4e00" <= char <= "\u9fff" for char in text)
@@ -245,6 +319,26 @@ def normalize_top_n(value, default=10, minimum=1, maximum=50):
     return max(minimum, min(maximum, top_n))
 
 
+def validate_bp_state(db, bp_state):
+    invalid_fields = []
+    for key, champion in bp_state.items():
+        if not champion:
+            continue
+        lane = BP_SLOT_LANES[key]
+        tier = db.get("tiers", {}).get(lane, {}).get(champion)
+        if tier and tier != "?":
+            continue
+        invalid_fields.append(
+            {
+                "field": key,
+                "label": BP_SLOT_LABELS[key],
+                "value": champion,
+                "expected_lane": lane,
+            }
+        )
+    return invalid_fields
+
+
 def build_champion_list(db, lane):
     champions = []
     for name, tier in db["tiers"].get(lane, {}).items():
@@ -305,6 +399,17 @@ def recommend():
     for key in VALID_KEYS:
         value = raw_bp_state.get(key)
         bp_state[key] = str(value).strip().lower() if value else None
+
+    invalid_fields = validate_bp_state(db, bp_state)
+    if invalid_fields:
+        labels = [
+            f"{item['label']}={item['value']}"
+            for item in invalid_fields
+        ]
+        return api_error(
+            "BP 槽位包含无效英雄或位置不匹配: " + "，".join(labels),
+            invalid_fields=invalid_fields,
+        )
 
     top_n = normalize_top_n(payload.get("top_n"))
     result = run_recommend(role, bp_state, db, top_n=top_n)

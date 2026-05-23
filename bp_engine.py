@@ -302,6 +302,13 @@ def get_relation_stat(matrix, champion, target):
     return matrix.get(target, {}).get(champion)
 
 
+def get_lane_relation_matrix(db, matrix_key, lane=None):
+    by_lane = db.get(f"{matrix_key}_by_lane", {})
+    if lane and by_lane.get(lane):
+        return by_lane[lane]
+    return db.get(matrix_key, {})
+
+
 def top_relation_games(matrix, champion):
     top_games = 0
     for target, raw in matrix.get(champion, {}).items():
@@ -347,7 +354,12 @@ def calculate_base_rating(db, lane, champion, tier_label=None):
 
 
 def calculate_synergy_bonus(
-    db, candidate, partner, candidate_expectation_rating, partner_expectation_rating
+    db,
+    candidate,
+    partner,
+    candidate_expectation_rating,
+    partner_expectation_rating,
+    candidate_lane=None,
 ):
     if not partner:
         return {
@@ -363,7 +375,7 @@ def calculate_synergy_bonus(
         }
 
     expected_rating = candidate_expectation_rating + partner_expectation_rating
-    synergy_matrix = db.get("synergy", {})
+    synergy_matrix = get_lane_relation_matrix(db, "synergy", candidate_lane)
     stat = extract_stat(
         get_relation_stat(synergy_matrix, partner, candidate),
         legacy_games=LEGACY_RELATION_GAMES,
@@ -390,18 +402,20 @@ def calculate_synergy_bonus(
     }
 
 
-def get_matchup_stat(db, candidate, enemy, enemy_role):
+def get_matchup_stat(db, candidate, enemy, enemy_role, candidate_lane=None):
     matchup_key = "vs_adc" if enemy_role == "adc" else "vs_sup"
+    counter_matrix = get_lane_relation_matrix(db, "counter", candidate_lane)
     return extract_stat(
-        db.get("counter", {}).get(candidate, {}).get(matchup_key, {}).get(enemy),
+        counter_matrix.get(candidate, {}).get(matchup_key, {}).get(enemy),
         legacy_games=LEGACY_RELATION_GAMES,
     )
 
 
-def top_matchup_games(db, candidate, enemy_role):
+def top_matchup_games(db, candidate, enemy_role, candidate_lane=None):
     matchup_key = "vs_adc" if enemy_role == "adc" else "vs_sup"
+    counter_matrix = get_lane_relation_matrix(db, "counter", candidate_lane)
     top_games = 0
-    for raw in db.get("counter", {}).get(candidate, {}).get(matchup_key, {}).values():
+    for raw in counter_matrix.get(candidate, {}).get(matchup_key, {}).values():
         top_games = max(top_games, int(extract_stat(raw, legacy_games=LEGACY_RELATION_GAMES)["games"]))
     return top_games
 
@@ -414,7 +428,9 @@ def counter_role_weight(recommend_role, enemy_role):
     return 1.0
 
 
-def calculate_counter_bonus(db, candidate, enemies, candidate_expectation_rating, role=None):
+def calculate_counter_bonus(
+    db, candidate, enemies, candidate_expectation_rating, role=None, candidate_lane=None
+):
     weighted_bonuses = []
     weighted_absolute_scores = []
     weighted_residual_scores = []
@@ -431,7 +447,7 @@ def calculate_counter_bonus(db, candidate, enemies, candidate_expectation_rating
         enemy_tier = db.get("tiers", {}).get(enemy_lane, {}).get(enemy)
         enemy_base = calculate_base_rating(db, enemy_lane, enemy, enemy_tier)
         expected_rating = candidate_expectation_rating - enemy_base["expectation_rating"]
-        stat = get_matchup_stat(db, candidate, enemy, enemy_role)
+        stat = get_matchup_stat(db, candidate, enemy, enemy_role, candidate_lane)
         if stat["games"] > 0:
             valid_count += 1
         blended = blended_relation_score(
@@ -441,7 +457,7 @@ def calculate_counter_bonus(db, candidate, enemies, candidate_expectation_rating
             COUNTER_RESIDUAL_WEIGHT,
             MATCHUP_PRIOR_GAMES,
             STRONG_COUNTER_FLOOR,
-            local_top_games=top_matchup_games(db, candidate, enemy_role),
+            local_top_games=top_matchup_games(db, candidate, enemy_role, candidate_lane),
         )
         weight = counter_role_weight(role, enemy_role)
         weighted_bonuses.append(blended["score"] * weight)
@@ -1225,10 +1241,20 @@ def run_recommend(role, bp_state, db, top_n=None):
     results = []
     for name, score in candidates.items():
         synergy = calculate_synergy_bonus(
-            db, name, ally, score["expectation_rating"], partner_rating
+            db,
+            name,
+            ally,
+            score["expectation_rating"],
+            partner_rating,
+            candidate_lane=meta["lane"],
         )
         counter = calculate_counter_bonus(
-            db, name, enemy_context, score["expectation_rating"], role=role
+            db,
+            name,
+            enemy_context,
+            score["expectation_rating"],
+            role=role,
+            candidate_lane=meta["lane"],
         )
         synergy_adjusted = adjusted_synergy_score(synergy, bool(ally))
         counter_adjusted = adjusted_counter_score(counter, len(enemy_context))

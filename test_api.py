@@ -17,6 +17,13 @@ def assert_ok(response, path):
     return data
 
 
+def assert_bad_request(response, path):
+    assert response.status_code == 400, f"{path} status={response.status_code}"
+    data = response.get_json()
+    assert data and data.get("ok") is False, f"{path} returned not error: {data}"
+    return data
+
+
 def test_health(client):
     data = assert_ok(client.get("/api/health"), "/api/health")
     assert data["service"] == "lol-botlane-bp"
@@ -78,6 +85,39 @@ def test_recommend(client):
     assert "timeline" in precise["precision_detail"]
 
 
+def test_recommend_rejects_invalid_bp_champions(client):
+    payload = {
+        "role": "support",
+        "top_n": 5,
+        "bp_state": {
+            "ally_ad": "notachamp",
+            "enemy_ad": "jinx",
+        },
+    }
+    data = assert_bad_request(
+        client.post("/api/recommend", json=payload),
+        "/api/recommend invalid champion",
+    )
+    assert "invalid_fields" in data
+    assert data["invalid_fields"][0]["field"] == "ally_ad"
+
+
+def test_recommend_rejects_wrong_lane_champions(client):
+    payload = {
+        "role": "support",
+        "top_n": 5,
+        "bp_state": {
+            "ally_ad": "leona",
+            "enemy_ad": "jinx",
+        },
+    }
+    data = assert_bad_request(
+        client.post("/api/recommend", json=payload),
+        "/api/recommend wrong lane champion",
+    )
+    assert data["invalid_fields"][0]["field"] == "ally_ad"
+
+
 def test_side_features(client):
     assert_ok(client.get("/api/synergy/jinx?top_n=3"), "/api/synergy/jinx")
     assert_ok(client.get("/api/counter/jinx?top_n=3"), "/api/counter/jinx")
@@ -90,6 +130,8 @@ def main():
     test_health(client)
     test_champions(client)
     test_recommend(client)
+    test_recommend_rejects_invalid_bp_champions(client)
+    test_recommend_rejects_wrong_lane_champions(client)
     test_side_features(client)
     print("OK: API smoke tests passed")
 

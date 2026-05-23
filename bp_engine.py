@@ -92,6 +92,14 @@ MATURE_RELATION_FLOOR_SCORE = 3.0
 COMPONENT_CALIBRATION_SCALE = 30.0
 COMPONENT_CALIBRATION_LIMIT = 30.0
 BASE_CALIBRATION_LIMIT = 22.0
+CONTEXT_GAP_THRESHOLD = 6.0
+CONTEXT_GAP_PENALTY_FACTOR = 0.25
+CONTEXT_GAP_PENALTY_CAP = 4.0
+CONTEXT_SUPPORT_TARGET = 13.0
+CONTEXT_SUPPORT_BASE_THRESHOLD = 14.0
+CONTEXT_SUPPORT_PENALTY_FACTOR = 0.45
+CONTEXT_SUPPORT_BASE_FACTOR = 0.12
+CONTEXT_TOTAL_PENALTY_CAP = 5.0
 STRONG_RELATION_WINRATE = 0.54
 STRONG_RELATION_GAMES = 1000
 STRONG_SYNERGY_FLOOR = 8.0
@@ -203,6 +211,39 @@ def calibrated_component_score(value):
 
 def calibrated_base_score(value):
     return math.tanh(float(value or 0) / COMPONENT_CALIBRATION_SCALE) * BASE_CALIBRATION_LIMIT
+
+
+def calculate_context_score(has_ally, enemy_count, synergy_score, counter_score):
+    if has_ally and enemy_count > 0:
+        return (synergy_score + counter_score) / 2
+    if has_ally:
+        return synergy_score
+    if enemy_count > 0:
+        return counter_score
+    return None
+
+
+def calculate_context_gap_penalty(base_score, context_score):
+    if context_score is None:
+        return 0.0, 0.0
+    gap = base_score - context_score
+    gap_penalty = 0.0
+    if gap > CONTEXT_GAP_THRESHOLD:
+        gap_penalty = min(
+            CONTEXT_GAP_PENALTY_CAP,
+            (gap - CONTEXT_GAP_THRESHOLD) * CONTEXT_GAP_PENALTY_FACTOR,
+        )
+    support_penalty = 0.0
+    if base_score > CONTEXT_SUPPORT_BASE_THRESHOLD and context_score < CONTEXT_SUPPORT_TARGET:
+        support_penalty = (
+            (CONTEXT_SUPPORT_TARGET - context_score) * CONTEXT_SUPPORT_PENALTY_FACTOR
+            + (base_score - CONTEXT_SUPPORT_BASE_THRESHOLD) * CONTEXT_SUPPORT_BASE_FACTOR
+        )
+    penalty = min(
+        CONTEXT_TOTAL_PENALTY_CAP,
+        gap_penalty + support_penalty,
+    )
+    return gap, penalty
 
 
 def blended_relation_score(
@@ -1154,6 +1195,8 @@ def build_precision_meta(db, role, bp_state, row, ally):
         risks.append("与当前己方搭档的历史配合分明显偏低。")
     if (bp_state.get("enemy_ad") or bp_state.get("enemy_sup")) and row.get("counter_calibrated_score", row.get("counter_adjusted_score", 0)) < -6:
         risks.append("面对当前敌方下路的历史对位分明显偏低。")
+    if row.get("context_penalty", 0) > 0:
+        risks.append("当前 BP 语境支持不足，已降低泛用强势优先级。")
     if time_detail.get("available") is False:
         risks.append("当前缓存暂无时间段强势数据，更新数据后可显示曲线。")
     if not risks:
@@ -1182,6 +1225,9 @@ def build_precision_meta(db, role, bp_state, row, ally):
                 "confidence_label": row.get("confidence_label"),
                 "base_rating": row.get("base_rating"),
                 "base_calibrated_score": row.get("base_calibrated_score"),
+                "context_score": row.get("context_score"),
+                "context_gap": row.get("context_gap"),
+                "context_penalty": row.get("context_penalty"),
                 "synergy_bonus": row.get("synergy_bonus"),
                 "synergy_calibrated_score": row.get("synergy_calibrated_score"),
                 "synergy_maturity_score": row.get("synergy_maturity_score"),
@@ -1261,11 +1307,18 @@ def run_recommend(role, bp_state, db, top_n=None):
         base_calibrated = calibrated_base_score(score["base_rating"])
         synergy_calibrated = calibrated_component_score(synergy_adjusted)
         counter_calibrated = calibrated_component_score(counter_adjusted)
-        final_rating = (
+        raw_final_rating = (
             component_weights["base"] * base_calibrated
             + component_weights["synergy"] * synergy_calibrated
             + component_weights["counter"] * counter_calibrated
         )
+        context_score = calculate_context_score(
+            bool(ally), len(enemy_context), synergy_calibrated, counter_calibrated
+        )
+        context_gap, context_penalty = calculate_context_gap_penalty(
+            base_calibrated, context_score
+        )
+        final_rating = raw_final_rating - context_penalty
         row = {
             "name": name,
             "tier": score["tier_label"],
@@ -1279,6 +1332,10 @@ def run_recommend(role, bp_state, db, top_n=None):
             "winrate_component": round(score["winrate_component"], 2),
             "base_confidence_multiplier": round(score["base_confidence_multiplier"], 4),
             "base_games": score["base_games"],
+            "raw_final_rating": round(raw_final_rating, 2),
+            "context_score": round(context_score, 2) if context_score is not None else None,
+            "context_gap": round(context_gap, 2),
+            "context_penalty": round(context_penalty, 2),
             "final_rating": round(final_rating, 2),
             "display_winrate": round(rating_to_winrate(final_rating) * 100, 2),
             "synergy_bonus": round(synergy["synergy_bonus"], 2),
@@ -1359,7 +1416,7 @@ def run_recommend(role, bp_state, db, top_n=None):
         "enemies": enemies,
         "excluded_champions": sorted(selected_champions),
         "weights": round_weights(component_weights),
-        "score_model": "absolute_residual_blend_v2",
+        "score_model": "absolute_residual_context_v3",
         "results": results,
         "precise_results": precise_results,
         "meta": db.get("meta", {}),

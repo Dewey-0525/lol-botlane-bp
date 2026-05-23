@@ -932,7 +932,7 @@
           <th>排名</th>
           <th>英雄</th>
           <th>梯队</th>
-          <th>推荐指数<span class="help-tip" tabindex="0" data-tip="综合排序用的推荐值，不是真实胜率。公式：推荐分 = 基础校准分×基础权重 + 配合校准分×配合权重 + 对位校准分×对位权重；推荐指数 = 100 / (1 + 10^(-推荐分 / 400))。权重会随 BP 信息变化。">?</span></th>
+          <th>推荐指数<span class="help-tip" tabindex="0" data-tip="综合排序用的推荐值，不是真实胜率。先计算：原始推荐分 = 基础校准分×基础权重 + 配合校准分×配合权重 + 对位校准分×对位权重；如果基础强度很高，但当前配合/对位语境没有明显支持，会扣除语境惩罚来降低 Top 优先级。推荐指数 = 100 / (1 + 10^(-最终推荐分 / 400))。">?</span></th>
           <th>基础表现<span class="help-tip" tabindex="0" data-tip="表格显示用于排序的基础校准分。原始基础表现 = Tier 先验 + 胜率修正；校准公式 = 22 × tanh(原始分 / 30)，用于压低版本强英雄的单项统治力。">?</span></th>
           <th>配合<span class="help-tip" tabindex="0" data-tip="表格显示用于排序的配合校准分。原始配合分 = 置信度 × (45%×组合绝对表现 + 35%×超预期配合 + 20%×组合成熟度)；成熟度综合全局场次和该英雄内相对场次，实际胜率低于 48.5% 时不加成熟度。超高场次且表现不差的成熟组合会有小额托底。">?</span></th>
           <th>对位<span class="help-tip" tabindex="0" data-tip="表格显示用于排序的对位校准分。原始对位分 = 置信度 × (45%×对位绝对表现 + 35%×超预期对位 + 20%×对位样本成熟度)；成熟度代表样本稳定和对局熟悉度，不等于更克制。超高场次且表现不差的常见对位会有小额托底。">?</span></th>
@@ -1577,6 +1577,7 @@
         `这条推荐主要参考${basis}；分数只用于候选英雄之间比较，不等于真实胜率。`;
       document.querySelector("#precision_data").innerHTML = [
         scoreTile("可信度", data.confidence_label ?? row.confidence_label ?? "-"),
+        scoreTile("语境惩罚", data.context_penalty ?? row.context_penalty ?? 0, `语境分 ${data.context_score ?? row.context_score ?? "-"}`),
         scoreTile("配合样本", data.duo_games ?? row.duo_games ?? 0, `成熟度 ${data.synergy_maturity_score ?? "-"}`),
         scoreTile("对位样本", data.matchup_games ?? row.matchup_games ?? 0, `成熟度 ${data.counter_maturity_score ?? "-"}`),
       ].join("");

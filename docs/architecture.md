@@ -21,13 +21,14 @@ Lolalytics
 
 ### `pre_fetch.py`
 
-负责从 Lolalytics 拉取 KR / Emerald+ / Ranked / current patch 的下路相关数据，并生成离线快照：
+负责从 Lolalytics 拉取 KR / Emerald+ / Ranked / 当前默认版本的下路相关数据，并生成离线快照：
 
 - bottom / support 两个位置的梯队和基础英雄表现。
 - 英雄之间的下路协同数据。
 - 英雄面对敌方 ADC / 辅助的对位数据。
-- 默认不传 `patch` 参数，以对齐 Lolalytics tierlist 页面默认当前版本口径；如需最近 7/14 天或指定旧版本，可显式传 `patch=7`、`patch=14`、`patch=16.9` 等参数。
-- 不再解析 Lolalytics 页面 HTML。页面可能被 Cloudflare 拦截，数据层改为读取公开统计接口里的 `ep=tier`、`ep=build-team`、`ep=counter` 数据。
+- 当前版本刚更新时样本较少，入库最低场次为 100；推荐结果仍会通过可信度字段提示样本成熟度。
+- 核心数据读取公开统计接口里的 `ep=tier`、`ep=build-team`、`ep=counter` 数据。
+- 时间趋势不在这些接口里，需要通过 `--with-timeline` 单独启用 Scrapling 抓取 build 页 Qwik JSON。
 
 输出文件：
 
@@ -39,11 +40,20 @@ data/botlane_dataset.json
 
 - `meta`：更新时间和数据来源。
 - `tiers`：bottom/support 梯队。
-- `hero_stats`：英雄基础胜率与场次。
+- `hero_stats`：英雄基础胜率、场次和可用的时间趋势。
 - `synergy_by_lane` / `counter_by_lane`：按候选位置保存的协同和对位数据。
 - `synergy` / `counter`：兼容旧接口的合并数据。
 
 按位置保存矩阵是推荐准确性的关键：同一个英雄可能同时出现在 bottom 和 support，如果只按英雄名合并，后写入的位置会覆盖先写入的位置，导致配合或对位取到错误位置的数据。
+
+时间趋势数据来自 build 页 Qwik JSON 里的 `time` / `timeWin` 字段。当前可直连的 `mega` 接口只覆盖梯队、协同和对位，不返回时间段字段；因此更新流程分成两层：
+
+- 主动刷新：`python3 update_data.py --with-timeline` 使用 Scrapling 访问英雄 build 页，并从 Qwik JSON 解析 `stats_by_time`。
+- 缓存兜底：如果 Scrapling 被 Cloudflare 拦截或页面没有返回 Qwik 数据，只在基础胜率和场次完全一致时，从本地旧快照继承 `stats_by_time`。
+
+Scrapling 的 build 页 URL 默认只带 `lane / region`。当前版本不传 `patch`，历史版本才显式传 `patch=16.9` 这类参数。不要默认追加 `tier=emerald_plus` 或 `queue=ranked`，否则 Lolalytics 可能返回不同页面或错误口径；如果需要 Emerald 单段位等特殊口径，再显式传入对应参数。
+
+时间趋势属于解释型数据，不参与推荐分主公式；它缺失时不应该阻断基础、配合、对位三类核心数据更新。
 
 ### `update_data.py`
 
@@ -55,6 +65,17 @@ data/botlane_dataset.json
   -> 校验 data/botlane_dataset.json
   -> 运行 API smoke tests
   -> 保留通过校验的新数据
+```
+
+可选时间趋势刷新：
+
+```text
+备份旧数据
+  -> 运行 pre_fetch.py --with-timeline
+  -> Scrapling 抓取 build 页 Qwik JSON
+  -> 失败项使用同口径本地快照兜底
+  -> 校验 data/botlane_dataset.json
+  -> 运行 API smoke tests
 ```
 
 

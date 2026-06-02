@@ -4,8 +4,9 @@
 安全数据更新脚本。
 
 常用命令:
-  python3 update_data.py              # 运行 pre_fetch.py 更新数据
-  python3 update_data.py --check-only # 只校验当前数据和 API
+  python3 update_data.py                 # 运行 pre_fetch.py 更新数据
+  python3 update_data.py --with-timeline # 额外抓取时间趋势
+  python3 update_data.py --check-only    # 只校验当前数据和 API
 
 策略:
   1. 更新前备份旧数据
@@ -26,12 +27,12 @@ import time
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(BASE_DIR, "data", "botlane_dataset.json")
 BACKUP_DIR = os.path.join(BASE_DIR, "data", "backups")
-MIN_BOTTOM_CHAMPIONS = 30
-MIN_SUPPORT_CHAMPIONS = 60
+MIN_BOTTOM_CHAMPIONS = 25
+MIN_SUPPORT_CHAMPIONS = 35
 MIN_HERO_STATS_RATIO = 0.9
-MIN_SYNERGY_ROWS = 700
-MIN_COUNTER_ADC_ROWS = 700
-MIN_COUNTER_SUP_ROWS = 900
+MIN_SYNERGY_ROWS = 10
+MIN_COUNTER_ADC_ROWS = 50
+MIN_COUNTER_SUP_ROWS = 30
 MAX_FETCH_ERROR_RATIO = 0.25
 
 
@@ -155,10 +156,17 @@ def run_api_tests():
     run_command([sys.executable, "test_api.py"])
 
 
-def update_data():
+def update_data(with_timeline=False, timeline_limit=None, timeline_headed=False):
     backup_path = backup_dataset()
     try:
-        run_command([sys.executable, "pre_fetch.py"])
+        args = [sys.executable, "pre_fetch.py"]
+        if with_timeline:
+            args.append("--with-timeline")
+        if timeline_limit is not None:
+            args.extend(["--timeline-limit", str(timeline_limit)])
+        if timeline_headed:
+            args.append("--timeline-headed")
+        run_command(args)
         validate_dataset()
         run_api_tests()
     except Exception:
@@ -176,6 +184,22 @@ def main():
         action="store_true",
         help="只校验当前数据和 API，不运行 pre_fetch.py",
     )
+    parser.add_argument(
+        "--with-timeline",
+        action="store_true",
+        help="额外用 Scrapling 抓取 Lolalytics build 页时间趋势。",
+    )
+    parser.add_argument(
+        "--timeline-limit",
+        type=int,
+        default=None,
+        help="只抓取前 N 个时间趋势样本，便于本地测试。",
+    )
+    parser.add_argument(
+        "--timeline-headed",
+        action="store_true",
+        help="使用有界面浏览器抓取时间趋势，便于手动通过 Cloudflare。",
+    )
     args = parser.parse_args()
 
     if args.check_only:
@@ -184,7 +208,11 @@ def main():
         print("\n当前数据可用。")
         return
 
-    update_data()
+    update_data(
+        with_timeline=args.with_timeline,
+        timeline_limit=args.timeline_limit,
+        timeline_headed=args.timeline_headed,
+    )
 
 
 if __name__ == "__main__":

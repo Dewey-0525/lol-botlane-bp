@@ -23,7 +23,7 @@ HEADERS = {
 }
 
 _cache = {}
-MIN_GAMES = 300
+MIN_GAMES = 100
 TIME_BUCKETS = ["0-20", "20-25", "25-30", "30-35", "35+"]
 TIER_KEY_LABELS = {
     "1": "S+",
@@ -172,7 +172,7 @@ def mega_get_json(params, timeout=15, retries=3):
     raise ConnectionError(f"mega API 请求失败: {last_error}")
 
 
-def _champion_has_lane(cid, lane, patch="16.9", region="kr"):
+def _champion_has_lane(cid, lane, patch=None, region="kr"):
     if lane not in ("bottom", "support"):
         return True
 
@@ -199,7 +199,7 @@ def _champion_has_lane(cid, lane, patch="16.9", region="kr"):
         return False
 
 
-def get_synergy(champion_name, patch="16.9", region="kr", lane="bottom"):
+def get_synergy(champion_name, patch=None, region="kr", lane="bottom"):
     cache_key = f"synergy_{champion_name}_{patch}_{region}_{lane}"
     if cache_key in _cache:
         return _cache[cache_key]
@@ -227,7 +227,7 @@ def get_synergy(champion_name, patch="16.9", region="kr", lane="bottom"):
     return data
 
 
-def get_matchup(champion_name, patch="16.9", lane="bottom", region="kr"):
+def get_matchup(champion_name, patch=None, lane="bottom", region="kr"):
     cache_key = f"matchup_{champion_name}_{patch}_{lane}_{region}"
     if cache_key in _cache:
         return _cache[cache_key]
@@ -358,7 +358,7 @@ def format_matchup(data, enemy_role="bottom", top_n=10):
     return result[:top_n]
 
 
-def get_champion_tier(champion_name: str, patch="16.9", lane="bottom", region="kr") -> Dict:
+def get_champion_tier(champion_name: str, patch=None, lane="bottom", region="kr") -> Dict:
     tier_list = get_full_tier_list([champion_name], patch=patch, lane=lane, region=region)
     normalized = champion_name.strip().lower()
     for row in tier_list:
@@ -367,7 +367,7 @@ def get_champion_tier(champion_name: str, patch="16.9", lane="bottom", region="k
     return None
 
 
-def get_full_tier_list(champion_names, patch="16.9", lane="bottom", region="kr", delay=0.5, max_workers=5):
+def get_full_tier_list(champion_names, patch=None, lane="bottom", region="kr", delay=0.5, max_workers=5):
     """通过 Lolalytics mega tier 端点获取指定位置梯队数据。"""
     cache_key = f"tier_{patch}_{lane}_{region}"
     if cache_key in _cache:

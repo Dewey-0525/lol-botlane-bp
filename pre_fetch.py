@@ -4,15 +4,82 @@
 pre_fetch.py - 数据预热脚本 (修复版)
 修复: 对每个英雄同时爬取 bottom + support 两个位置的数据
 """
+import glob
+import argparse
 import json, os, time, sys
 import concurrent.futures
 import scraper.lolalytics as la
+import scraper.lolalytics_timeline as timeline
 from scraper.champion_map import get_all
 
 DATA_DIR = "data"
 OUTPUT_FILE = os.path.join(DATA_DIR, "botlane_dataset.json")
 MAX_WORKERS = 5
 LANES = ["bottom", "support"]  # 关键修复：爬两个位置
+DEFAULT_PATCH = None
+
+
+def _same_stat_record(current, cached):
+    try:
+        current_games = int(float(current.get("games") or 0))
+        cached_games = int(float(cached.get("games") or 0))
+        current_wr = round(float(current.get("win_rate")), 2)
+        cached_wr = round(float(cached.get("win_rate")), 2)
+    except (TypeError, ValueError):
+        return False
+    return current_games == cached_games and current_wr == cached_wr
+
+
+def build_time_profile_cache():
+    """
+    新 mega tier/counter/team 接口不返回 time/timeWin。
+    旧 build 页 Qwik JSON 有时间段数据，但现在常被 Cloudflare 拦截。
+    因此仅在基础胜率和场次完全同口径时，复用本地旧快照里的时间段数据。
+    """
+    paths = []
+    if os.path.exists(OUTPUT_FILE):
+        paths.append(OUTPUT_FILE)
+    backup_dir = os.path.join(DATA_DIR, "backups")
+    paths.extend(sorted(glob.glob(os.path.join(backup_dir, "botlane_dataset*.json")), reverse=True))
+
+    cache = {}
+    for path in paths:
+        try:
+            with open(path, encoding="utf-8") as f:
+                dataset = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            continue
+
+        for lane, lane_stats in dataset.get("hero_stats", {}).items():
+            for champion, record in lane_stats.items():
+                rows = record.get("stats_by_time") or []
+                if not rows:
+                    continue
+                key = (lane, champion)
+                cache.setdefault(key, []).append(
+                    {
+                        "win_rate": record.get("win_rate"),
+                        "games": record.get("games"),
+                        "stats_by_time": rows,
+                        "source": os.path.basename(path),
+                    }
+                )
+    return cache
+
+
+def hydrate_time_profiles(hero_stats, cache=None):
+    cache = cache if cache is not None else build_time_profile_cache()
+    restored = 0
+    for lane, lane_stats in hero_stats.items():
+        for champion, record in lane_stats.items():
+            if record.get("stats_by_time"):
+                continue
+            for cached in cache.get((lane, champion), []):
+                if _same_stat_record(record, cached):
+                    record["stats_by_time"] = cached["stats_by_time"]
+                    restored += 1
+                    break
+    return restored
 
 
 def progress(current, total, name=""):
@@ -22,17 +89,23 @@ def progress(current, total, name=""):
     sys.stdout.flush()
 
 
-def fetch_tiers():
+def fetch_tiers(with_timeline=False, timeline_limit=None, timeline_headless=True):
     """获取两个位置的梯队和基础强度数据"""
     print("\n[1/3] 正在获取梯队数据...")
     tiers = {"support": {}, "bottom": {}}
     hero_stats = {"support": {}, "bottom": {}}
     fetch_errors = []
+    timeline_summary = {"attempted": 0, "fetched": 0, "errors": []}
     
     all_champs = list(get_all().keys())
     for lane in LANES:
         try:
-            tier_list = la.get_full_tier_list(all_champs, lane=lane, region="kr")
+            tier_list = la.get_full_tier_list(
+                all_champs,
+                patch=DEFAULT_PATCH,
+                lane=lane,
+                region="kr",
+            )
             for champ in tier_list:
                 champion = champ["champion"]
                 tiers[lane][champion] = champ["tier"]
@@ -50,7 +123,35 @@ def fetch_tiers():
                     "error": str(e),
                 }
             )
-    return tiers, hero_stats, fetch_errors
+    if with_timeline:
+        print("\n  正在单独抓取时间趋势数据 (Scrapling + build 页 Qwik JSON)...")
+        try:
+            timeline_summary = timeline.hydrate_time_profiles(
+                hero_stats,
+                lanes=LANES,
+                region="kr",
+                patch=DEFAULT_PATCH,
+                limit=timeline_limit,
+                headless=timeline_headless,
+            )
+            print(
+                "  时间趋势抓取完成: "
+                f"{timeline_summary['fetched']}/{timeline_summary['attempted']}"
+            )
+        except Exception as e:
+            timeline_summary["errors"].append(
+                {
+                    "stage": "timeline",
+                    "error": str(e),
+                }
+            )
+            print(f"  时间趋势抓取不可用，改用本地同口径快照兜底: {e}")
+
+    restored = hydrate_time_profiles(hero_stats)
+    if restored:
+        print(f"  已从本地同口径快照恢复时间趋势: {restored} 个英雄")
+    timeline_summary["restored_from_cache"] = restored
+    return tiers, hero_stats, fetch_errors, timeline_summary
 
 
 def fetch_single_champ_lane(champ_key, lane):
@@ -63,7 +164,7 @@ def fetch_single_champ_lane(champ_key, lane):
     fetch_errors = []
 
     try:
-        raw_syn = la.get_synergy(champ_key, lane=lane)
+        raw_syn = la.get_synergy(champ_key, patch=DEFAULT_PATCH, lane=lane)
         if raw_syn:
             partner_role = "support" if lane == "bottom" else "bottom"
             for name, wr, games, _ in la.format_synergy(
@@ -81,7 +182,7 @@ def fetch_single_champ_lane(champ_key, lane):
         )
 
     try:
-        raw_mat = la.get_matchup(champ_key, lane=lane)
+        raw_mat = la.get_matchup(champ_key, patch=DEFAULT_PATCH, lane=lane)
         if raw_mat:
             for name, wr, games, _ in la.format_matchup(
                 raw_mat, enemy_role="bottom", top_n=200
@@ -203,6 +304,25 @@ def legacy_fetch_matrix():
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--with-timeline",
+        action="store_true",
+        help="额外用 Scrapling 抓取 Lolalytics build 页时间趋势。",
+    )
+    parser.add_argument(
+        "--timeline-limit",
+        type=int,
+        default=None,
+        help="只抓取前 N 个时间趋势样本，便于本地测试。",
+    )
+    parser.add_argument(
+        "--timeline-headed",
+        action="store_true",
+        help="使用有界面浏览器抓取时间趋势，便于手动通过 Cloudflare。",
+    )
+    args = parser.parse_args()
+
     os.makedirs(DATA_DIR, exist_ok=True)
     start_time = time.time()
 
@@ -211,7 +331,11 @@ def main():
     print("=" * 50)
 
     all_champions = list(get_all().keys())
-    tiers, hero_stats, tier_errors = fetch_tiers()
+    tiers, hero_stats, tier_errors, timeline_summary = fetch_tiers(
+        with_timeline=args.with_timeline,
+        timeline_limit=args.timeline_limit,
+        timeline_headless=not args.timeline_headed,
+    )
     synergy, counter, synergy_by_lane, counter_by_lane, matrix_errors, matrix_attempts = fetch_matrix(tiers)
     fetch_errors = tier_errors + matrix_errors
     fetch_attempts = len(LANES) + matrix_attempts * 2
@@ -240,6 +364,15 @@ def main():
             "coverage": coverage,
             "fetch_errors_count": len(fetch_errors),
             "fetch_errors": fetch_errors[:100],
+            "timeline": {
+                "enabled": args.with_timeline,
+                "source": timeline.TIME_PROFILE_SOURCE if args.with_timeline else "cache_only",
+                "attempted": timeline_summary.get("attempted", 0),
+                "fetched": timeline_summary.get("fetched", 0),
+                "restored_from_cache": timeline_summary.get("restored_from_cache", 0),
+                "errors_count": len(timeline_summary.get("errors", [])),
+                "errors": timeline_summary.get("errors", [])[:30],
+            },
         },
         "tiers": tiers,
         "hero_stats": hero_stats,

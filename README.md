@@ -36,6 +36,18 @@ python3 update_data.py
 
 更新流程会先备份旧数据，重新抓取 Lolalytics 数据，校验 `data/botlane_dataset.json`，再运行 API 冒烟测试。任一步失败都会保留或恢复旧数据。
 
+如果需要同时刷新时间趋势图数据：
+
+```bash
+python3 update_data.py --with-timeline
+```
+
+时间趋势会额外通过 Scrapling 访问英雄 build 页面，从页面 Qwik JSON 中解析 `time/timeWin`。如果遇到 Cloudflare 验证，可以改用有界面模式：
+
+```bash
+python3 update_data.py --with-timeline --timeline-headed
+```
+
 检查 API 是否可用：
 
 ```bash
@@ -48,13 +60,17 @@ python3 test_api.py
 
 数据来自 Lolalytics 的公开统计接口，当前快照默认面向 KR / Emerald+ / Ranked / current patch 的 bottom 和 support 数据。推荐指数是项目内部排序分，不是真实胜率，也不是 Lolalytics 原始胜率。
 
-当前抓取逻辑不再依赖 Lolalytics 页面 HTML。页面本身可能被 Cloudflare 拦截，但数据更新使用 Lolalytics 的公开统计接口：
+核心抓取逻辑不依赖 Lolalytics 页面 HTML。页面本身可能被 Cloudflare 拦截，但基础、配合和对位数据更新使用 Lolalytics 的公开统计接口：
 
 - `ep=tier`：拉取 bottom/support 梯队、胜率和场次。
 - `ep=build-team`：拉取下路组合协同。
 - `ep=counter`：拉取面对敌方 ADC / 辅助的对位表现。
 
-默认不传 `patch` 参数，以对齐 Lolalytics 网页默认当前版本；`patch=7` 表示最近 7 天，`patch=14` 表示最近 14 天，`patch=16.9` 这类值表示指定旧版本。
+默认不传 `patch` 参数，以对齐 Lolalytics 网页默认当前版本。Lolalytics 中 `patch=7` 表示最近 7 天，`patch=14` 表示最近 14 天，`patch=16.9` 这类值表示指定旧版本。
+
+时间趋势是单独链路：`--with-timeline` 会用 Scrapling 抓取英雄 build 页源码，解析 Qwik JSON 里的分时段场次和胜场。build 页默认只带 `lane / region` 参数，历史版本才额外带 `patch`；如果抓不到，则只在胜率和场次同口径时继承本地旧快照，避免把不同版本的趋势混入当前数据。
+
+当前版本刚更新时样本会很小，数据预热按 100 场作为最低入库门槛，并用前端可信度提示样本成熟度。
 
 评分摘要
 --------
@@ -72,6 +88,7 @@ python3 test_api.py
 - 对位：候选英雄面对敌方 ADC / 辅助的纯净增益，主要看是否超出理论预期和样本成熟度，不再把对位绝对表现重复计入排序。
 - 语境惩罚：当基础强度很高但当前配合/对位没有明显支持时，下调 Top 优先级，避免版本强势英雄无条件压过所有 BP 场景。
 - 可信度：按参考场次分级，只说明样本是否充足，不代表一定更好赢。
+- 时间趋势：来自英雄 build 页 Qwik JSON 的分时段场次/胜场；核心统计接口没有该字段，因此作为单独链路或缓存兜底，不参与推荐分计算。
 
 详细公式见 [评分模型](docs/scoring-model.md)。
 

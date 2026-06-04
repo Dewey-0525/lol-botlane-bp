@@ -25,8 +25,8 @@ TIME_PROFILE_SOURCE = "lolalytics_build_qwik"
 
 def _champion_slug(champion):
     name = champion.strip().lower()
-    if name == "wukong":
-        return "monkeyking"
+    if name == "monkeyking":
+        return "wukong"
     return name
 
 

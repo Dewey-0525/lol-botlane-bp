@@ -1,0 +1,26 @@
+name: Keep Render service awake
+
+# 北京时间 18:50~23:59（即 UTC 10:50~15:59）每 10 分钟 ping 一次健康检查，
+# 防止 Render 免费层因闲置 15 分钟而休眠。GitHub 公开仓库 Actions 免费不限量，
+# 每天仅消耗约 5 小时 Render 实例时间，远离 750 小时/月的免费上限。
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "50 10-15 * * *"
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Ping health endpoint
+        env:
+          URL: https://lol-botlane-bp.onrender.com/api/health
+        run: |
+          echo "Pinging $URL ..."
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 "$URL")
+          echo "HTTP status: $code"
+          if [ "$code" != "200" ]; then
+            echo "::warning::Health check returned $code, service may not have started in time."
+          fi

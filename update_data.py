@@ -9,20 +9,24 @@
   python3 update_data.py --check-only    # 只校验当前数据和 API
 
 策略:
-  1. 更新前备份旧数据
-  2. pre_fetch.py 写临时文件并原子替换正式数据
-  3. 校验新数据结构和覆盖率
-  4. 运行 API 冒烟测试
-  5. 任一步失败则恢复旧数据
+  1. 独占更新锁，在独立候选路径运行 pre_fetch.py
+  2. 校验候选数据结构和覆盖率
+  3. 新进程针对候选文件运行 API 回归
+  4. 备份原数据，再原子替换正式文件
+  5. 发布前失败或进程中断均不改动正式文件
 """
 
 import argparse
+from contextlib import contextmanager
+import fcntl
+import hashlib
 import json
 import os
 import shutil
 import subprocess
 import sys
 import time
+import tempfile
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(BASE_DIR, "data", "botlane_dataset.json")
@@ -36,12 +40,13 @@ MIN_COUNTER_SUP_ROWS = 30
 MAX_FETCH_ERROR_RATIO = 0.25
 
 
-def run_command(args):
+def run_command(args, env=None):
     print(f"\n$ {' '.join(args)}")
-    return subprocess.run(args, cwd=BASE_DIR, check=True)
+    return subprocess.run(args, cwd=BASE_DIR, check=True, env=env)
 
 
-def validate_dataset(path=DATA_PATH):
+def validate_dataset(path=None):
+    path = path or DATA_PATH
     if not os.path.exists(path):
         raise FileNotFoundError(f"数据库不存在: {path}")
 
@@ -138,7 +143,7 @@ def backup_dataset():
     if not os.path.exists(DATA_PATH):
         return None
     os.makedirs(BACKUP_DIR, exist_ok=True)
-    stamp = time.strftime("%Y%m%d_%H%M%S")
+    stamp = time.strftime("%Y%m%d_%H%M%S") + f".{time.time_ns()}"
     backup_path = os.path.join(BACKUP_DIR, f"botlane_dataset.{stamp}.json")
     shutil.copy2(DATA_PATH, backup_path)
     print(f"已备份旧数据: {backup_path}")
@@ -148,18 +153,46 @@ def backup_dataset():
 def restore_backup(backup_path):
     if not backup_path:
         return
-    shutil.copy2(backup_path, DATA_PATH)
+    with dataset_lock(), tempfile.TemporaryDirectory(prefix=".botlane-restore-", dir=os.path.dirname(DATA_PATH)) as directory:
+        candidate = os.path.join(directory, "restored.json")
+        shutil.copy2(backup_path, candidate)
+        os.replace(candidate, DATA_PATH)
     print(f"已恢复旧数据: {backup_path}")
 
 
-def run_api_tests():
-    run_command([sys.executable, "test_api.py"])
+@contextmanager
+def dataset_lock():
+    """Serialize cooperative updates and restores on supported macOS/Linux hosts."""
+    os.makedirs(os.path.dirname(DATA_PATH), exist_ok=True)
+    with open(DATA_PATH + ".update.lock", "a+b") as lock:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise RuntimeError("已有数据更新或回退正在执行") from exc
+        try:
+            yield
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+def file_digest(path):
+    if not os.path.exists(path):
+        return None
+    with open(path, "rb") as file:
+        return hashlib.file_digest(file, "sha256").hexdigest()
+
+
+def run_api_tests(dataset_path=None):
+    env = os.environ.copy()
+    env["BOTLANE_DATA_PATH"] = os.path.abspath(dataset_path or DATA_PATH)
+    run_command([sys.executable, "test_api.py"], env=env)
 
 
 def update_data(with_timeline=False, timeline_limit=None, timeline_headed=False):
-    backup_path = backup_dataset()
-    try:
-        args = [sys.executable, "pre_fetch.py"]
+    with dataset_lock(), tempfile.TemporaryDirectory(prefix=".botlane-update-", dir=os.path.dirname(DATA_PATH)) as directory:
+        original_digest = file_digest(DATA_PATH)
+        candidate = os.path.join(directory, "botlane_dataset.json")
+        args = [sys.executable, "pre_fetch.py", "--output", candidate]
         if with_timeline:
             args.append("--with-timeline")
         if timeline_limit is not None:
@@ -167,14 +200,16 @@ def update_data(with_timeline=False, timeline_limit=None, timeline_headed=False)
         if timeline_headed:
             args.append("--timeline-headed")
         run_command(args)
-        validate_dataset()
-        run_api_tests()
-    except Exception:
-        print("\n更新失败，准备恢复旧数据。")
-        restore_backup(backup_path)
-        raise
+        validate_dataset(candidate)
+        run_api_tests(candidate)
+        if file_digest(DATA_PATH) != original_digest:
+            raise RuntimeError("验证期间正式数据被其他程序修改，停止发布")
+        backup_dataset()
+        with open(candidate, "rb") as file:
+            os.fsync(file.fileno())
+        os.replace(candidate, DATA_PATH)
 
-    print("\n数据更新完成。")
+    print("\n数据文件更新完成；运行中的网页需重新部署以加载新快照。")
 
 
 def main():

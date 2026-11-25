@@ -35,7 +35,7 @@ from champion_aliases import CHAMPION_ALIASES
 from scraper.chinese_getchampion.hero_id_mapping import HERO_ID_MAPPING
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "data", "botlane_dataset.json")
+DB_PATH = os.environ.get("BOTLANE_DATA_PATH") or os.path.join(BASE_DIR, "data", "botlane_dataset.json")
 CN_NAMES_PATH = os.path.join(BASE_DIR, "scraper", "chinese_getchampion", "英雄名字.txt")
 
 app = Flask(__name__)

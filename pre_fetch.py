@@ -305,6 +305,8 @@ def legacy_fetch_matrix():
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--output", default=OUTPUT_FILE,
+                        help="写入指定候选文件；正式更新由 update_data.py 校验后发布。")
     parser.add_argument(
         "--with-timeline",
         action="store_true",
@@ -382,11 +384,13 @@ def main():
         "counter": counter
     }
 
-    tmp_file = OUTPUT_FILE + ".tmp"
-    print(f"\n[3/3] 正在保存到 {OUTPUT_FILE} ...")
+    output_file = os.path.abspath(args.output)
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    tmp_file = output_file + ".tmp"
+    print(f"\n[3/3] 正在保存到 {output_file} ...")
     with open(tmp_file, 'w', encoding='utf-8') as f:
         json.dump(dataset, f, ensure_ascii=False)
-    os.replace(tmp_file, OUTPUT_FILE)
+    os.replace(tmp_file, output_file)
 
     # 统计数据覆盖率
     total_syn = sum(len(v) for v in synergy.values())

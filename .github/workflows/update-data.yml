@@ -1,46 +1,106 @@
-name: Update botlane dataset
+# Validation-branch harness only. Not the proposed production schedule.
+# The default branch's existing workflow is unchanged until separate approval.
+name: Isolated KR source acceptance
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 6 * * *"
+    inputs:
+      patch:
+        description: Explicit numbered source patch
+        required: true
+        default: '16.23'
+        type: string
+      identity_version:
+        description: Matching official Data Dragon version
+        required: true
+        default: '16.23.1'
+        type: string
+      scope:
+        description: Small transport/parser probe before a full-pool run
+        required: true
+        default: probe
+        type: choice
+        options: [probe, full]
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: isolated-kr-source-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  update-data:
+  validate:
+    if: github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/codex/data-reliability-')
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-
+    timeout-minutes: 150
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      VALIDATION_PATCH: ${{ inputs.patch }}
+      IDENTITY_VERSION: ${{ inputs.identity_version }}
+      VALIDATION_SCOPE: ${{ inputs.scope }}
+      EVIDENCE_ROOT: ${{ runner.temp }}/kr-acceptance
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - uses: actions/checkout@v6
         with:
-          python-version: "3.12"
-          cache: "pip"
-
-      - name: Install dependencies
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install project dependencies
         run: python -m pip install -r requirements.txt
-
-      - name: Install Patchright browsers
-        run: python -m patchright install chromium
-
-      - name: Update dataset
-        run: python update_data.py --with-timeline
-
-      - name: Commit updated dataset
+      - name: Validate failure boundaries offline
+        run: python -m unittest discover -s tests -v
+      - name: Capture matching official champion identities
+        run: >-
+          python scripts/prepare_kr_identity.py
+          --version "$IDENTITY_VERSION"
+          --output-dir "$EVIDENCE_ROOT/identity"
+      - name: Probe three explicit KR positions without publishing
+        if: inputs.scope == 'probe'
+        run: >-
+          python scripts/probe_kr_build_source.py
+          --patch "$VALIDATION_PATCH"
+          --case leona:support --case ashe:bottom --case brand:support
+          --output-dir "$EVIDENCE_ROOT/probe"
+      - name: Collect three full-pool rounds without publishing
+        if: inputs.scope == 'full'
+        run: >-
+          python scripts/validate_kr_source.py
+          --patch "$VALIDATION_PATCH" --rounds 3 --workers 5
+          --round-gap-seconds 60 --retry-after-cache-expiry
+          --catalog-file "$EVIDENCE_ROOT/identity/catalog.json"
+          --output-dir "$EVIDENCE_ROOT/full"
+      - name: Replay each complete round through the isolated application
+        if: inputs.scope == 'full'
         run: |
-          if git diff --quiet -- data/botlane_dataset.json; then
-            echo "Dataset is already up to date."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/botlane_dataset.json
-          git commit -m "Update botlane dataset"
-          git push
+          for round in 1 2 3; do
+            python scripts/validate_kr_integration.py \
+              --trial-dir "$EVIDENCE_ROOT/full" --round "$round" \
+              --catalog-source-dir "$EVIDENCE_ROOT/identity" \
+              --output-dir "$EVIDENCE_ROOT/application/round-$round"
+          done
+      - name: Verify full-pool end roster
+        if: inputs.scope == 'full'
+        run: >-
+          python scripts/check_kr_roster_stability.py
+          --trial-dir "$EVIDENCE_ROOT/full"
+          --catalog-file "$EVIDENCE_ROOT/identity/catalog.json"
+      - name: Preserve source and failure evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: kr-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.EVIDENCE_ROOT }}
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Confirm protected checkout stayed unchanged
+        if: always()
+        run: git diff --exit-code
+      - name: Record acceptance limitations
+        if: always()
+        run: |
+          echo 'Isolated manual Linux validation only. No production publication or deployment.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'A successful probe is partial coverage; full-pool and source-stability acceptance remain separate.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Neither manual execution nor offline tests establish daily schedule execution or recommendation accuracy.' >> "$GITHUB_STEP_SUMMARY"

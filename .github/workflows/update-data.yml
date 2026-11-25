@@ -39,11 +39,12 @@ jobs:
       VALIDATION_PATCH: ${{ inputs.patch }}
       IDENTITY_VERSION: ${{ inputs.identity_version }}
       VALIDATION_SCOPE: ${{ inputs.scope }}
-      EVIDENCE_ROOT: ${{ runner.temp }}/kr-acceptance
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+      - name: Set runner evidence directory
+        run: echo "EVIDENCE_ROOT=$RUNNER_TEMP/kr-acceptance" >> "$GITHUB_ENV"
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'

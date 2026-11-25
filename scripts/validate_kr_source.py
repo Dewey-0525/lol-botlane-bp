@@ -354,6 +354,13 @@ def main(argv=None):
     report["implementation_after"] = hashes(IMPLEMENTATION)
     report["implementation_unchanged_during_run"] = report["implementation_before"] == report["implementation_after"]
     report["round_comparisons"] = compare_rounds(output, len(report["rounds"]))
+    report["source_count_regression_detected"] = any(
+        comparison["base_game_regressions"] for comparison in report["round_comparisons"])
+    report["source_statistical_stability"] = (
+        "COUNT_REGRESSION_DETECTED_CAUSE_UNCONFIRMED" if report["source_count_regression_detected"]
+        else "NO_NEW_REGRESSION_OBSERVED_THIS_RUN; HISTORICAL_CAUSE_NOT_RESOLVED")
+    if report["source_count_regression_detected"]:
+        report["stopped_for_investigation"] = True
     report["protected_unchanged"] = report["protected_before"] == report["protected_after"]
     report["all_planned_rounds_completed"] = len(report["rounds"]) == args.rounds
     report["exit_code"] = 0 if report["all_planned_rounds_completed"] and not report.get("stopped_for_investigation") and report["protected_unchanged"] and report["implementation_unchanged_during_run"] else 1
